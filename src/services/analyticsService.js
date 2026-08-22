@@ -6,9 +6,10 @@
 import { todayISO, addDays } from "../utils/dates.js";
 import * as db from "../store/db.js";
 
-export async function rangeStats(days) {
+export async function rangeStats(days, offset = 0) {
   const today = todayISO();
-  const start = addDays(today, -(days - 1));
+  const end = addDays(today, -offset);
+  const start = addDays(end, -(days - 1));
 
   const tasks = await db.getAll("tasks");
   const sessions = await db.getAll("focusSessions");
@@ -16,11 +17,11 @@ export async function rangeStats(days) {
 
   // Tasks completed within the window
   const completedIn = tasks.filter(
-    (t) => t.status === "Completed" && t.completedAt && t.completedAt.slice(0, 10) >= start
+    (t) => t.status === "Completed" && t.completedAt && t.completedAt.slice(0, 10) >= start && t.completedAt.slice(0, 10) <= end
   );
 
   // Completion rate: of tasks that were due inside the window, how many are done?
-  const dueInWindow = tasks.filter((t) => t.dueDate && t.dueDate >= start && t.dueDate <= today);
+  const dueInWindow = tasks.filter((t) => t.dueDate && t.dueDate >= start && t.dueDate <= end);
   const doneOfDue = dueInWindow.filter(
     (t) => t.status === "Completed" || t.status === "Cancelled"
   );
@@ -33,7 +34,7 @@ export async function rangeStats(days) {
   for (const s of sessions) {
     if (s.type !== "focus") continue;
     const day = s.startedAt.slice(0, 10);
-    if (day < start || day > today) continue;
+    if (day < start || day > end) continue;
     const mins = Math.round((s.durationSeconds || 0) / 60);
     focusMinutes += mins;
     sessionCount += 1;
@@ -51,7 +52,7 @@ export async function rangeStats(days) {
   // Per-day series
   const perDay = [];
   for (let d = days - 1; d >= 0; d--) {
-    const iso = addDays(today, -d);
+    const iso = addDays(end, -d);
     const completed = completedIn.filter((t) => t.completedAt.slice(0, 10) === iso).length;
     const focusMin = sessions
       .filter((s) => s.type === "focus" && s.startedAt.slice(0, 10) === iso)
@@ -62,7 +63,7 @@ export async function rangeStats(days) {
   return {
     days,
     start,
-    end: today,
+    end,
     tasksCompleted: completedIn.length,
     completionRate: dueInWindow.length ? Math.round((doneOfDue.length / dueInWindow.length) * 100) : null,
     focusMinutes,
@@ -111,3 +112,4 @@ export async function habitConsistency(days = 30) {
 
   return perHabit.filter((x) => x.scheduled > 0);
 }
+

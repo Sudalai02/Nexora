@@ -1,5 +1,6 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
 
 export async function allSessions() {
   const sessions = await db.getAll("focusSessions");
@@ -19,7 +20,7 @@ export async function updateSession(id, patch) {
 }
 
 export async function removeSession(id) {
-  return db.del("focusSessions", id);
+  return recycle.softDelete("focusSessions", id);
 }
 
 export function minutesInRange(sessions, startISO, endISO) {

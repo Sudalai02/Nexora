@@ -1,5 +1,6 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
 
 const DONE = ["Completed", "Cancelled"];
 
@@ -48,11 +49,8 @@ export async function updateProject(id, patch) {
   return next;
 }
 
-// Deleting a project keeps its tasks but detaches them.
+// Deleting a project keeps its tasks untouched so restoring the
+// project brings every relationship back exactly as it was.
 export async function removeProject(id) {
-  const tasks = await db.getAll("tasks");
-  await Promise.all(
-    tasks.filter((t) => t.projectId === id).map((t) => db.put("tasks", { ...t, projectId: null }))
-  );
-  return db.del("projects", id);
+  return recycle.softDelete("projects", id);
 }

@@ -10,11 +10,16 @@ import { renderInbox } from "./pages/inbox.js";
 import { renderInsights } from "./pages/insights.js";
 import { renderAssistant } from "./pages/assistant.js";
 import { renderSettings } from "./pages/settings.js";
+import { renderRecycleBin } from "./pages/recycleBin.js";
 import { renderMore } from "./pages/more.js";
 import { seedIfNeeded } from "./store/seed.js";
 import * as db from "./store/db.js";
 import { getProfile } from "./services/settingsService.js";
 import { addItem } from "./services/inboxService.js";
+import * as recycleSvc from "./services/recycleService.js";
+import * as notificationSvc from "./services/notificationService.js";
+import { openSearch } from "./ui/searchOverlay.js";
+import { initBellPanel } from "./ui/bellPanel.js";
 import { toast } from "./ui/toast.js";
 
 registerRoute("home", renderHome);
@@ -28,6 +33,7 @@ registerRoute("inbox", renderInbox);
 registerRoute("insights", renderInsights);
 registerRoute("assistant", renderAssistant);
 registerRoute("settings", renderSettings);
+registerRoute("recycleBin", renderRecycleBin);
 registerRoute("more", renderMore);
 
 // ===================== BOOT =====================
@@ -35,11 +41,25 @@ async function boot() {
   await seedIfNeeded();
   await updateUserChip();
   initRouter();
+  initBellPanel();
+
+  // 15-day retention sweep — safe to run every start.
+  recycleSvc.purgeExpired().catch((err) => console.warn("[recycle] purge failed", err));
+
+  // Real notifications scheduler (bell center + native push).
+  notificationSvc.init().catch((err) => console.warn("[notifications] init failed", err));
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((err) =>
       console.warn("[pwa] service worker registration failed", err)
     );
+    // Notification clicks land here when the app is already open.
+    navigator.serviceWorker.addEventListener("message", (e) => {
+      const { type, route } = e.data || {};
+      if (type === "nexora:navigate" && route && window.location.hash !== route) {
+        window.location.hash = route;
+      }
+    });
   }
 }
 
@@ -77,12 +97,25 @@ quickAddBackdrop.addEventListener("click", (e) => {
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     e.preventDefault();
-    openQuickAdd();
+    openSearch();
   }
   if (e.key === "Escape") {
     closeQuickAdd();
     closeMoreSheet();
   }
+});
+
+// The topbar search field is a launcher for the full search overlay.
+const globalSearch = document.getElementById("global-search");
+function launchSearch(e) {
+  e?.preventDefault();
+  globalSearch?.blur();
+  openSearch();
+}
+globalSearch?.addEventListener("pointerdown", launchSearch);
+globalSearch?.addEventListener("focus", launchSearch);
+globalSearch?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === "ArrowDown") launchSearch(e);
 });
 
 // Quick add captures straight into the Inbox — triage happens there.

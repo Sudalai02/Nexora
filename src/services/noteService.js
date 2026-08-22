@@ -1,5 +1,6 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
 
 // ---------- Notes ----------
 export async function allNotes() {
@@ -33,7 +34,7 @@ export async function updateNote(id, patch) {
 }
 
 export async function removeNote(id) {
-  return db.del("notes", id);
+  return recycle.softDelete("notes", id);
 }
 
 // ---------- Folders ----------
@@ -55,10 +56,8 @@ export async function renameFolder(id, name) {
 }
 
 export async function removeFolder(id) {
-  // notes in the folder fall back to "Unfiled"
-  const notes = await db.getAll("notes");
-  await Promise.all(
-    notes.filter((n) => n.folderId === id).map((n) => db.put("notes", { ...n, folderId: null }))
-  );
-  return db.del("folders", id);
+  // Notes keep their folderId so restoring the folder restores the
+  // whole structure. Notes only become unfiled if the folder is
+  // permanently purged (handled by recycleService).
+  return recycle.softDelete("folders", id);
 }

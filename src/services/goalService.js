@@ -1,8 +1,18 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
+
+export const GOAL_STATUSES = ["Active", "In Progress", "Completed", "On Hold"];
+
+// Normalize any legacy statuses ("Paused") into the current set.
+function normalizeStatus(status) {
+  if (status === "Paused" || status === "OnHold") return "On Hold";
+  return GOAL_STATUSES.includes(status) ? status : "Active";
+}
 
 export async function allGoals() {
-  return db.getAll("goals");
+  const goals = await db.getAll("goals");
+  return goals.map((g) => ({ ...g, status: normalizeStatus(g.status) }));
 }
 
 export async function createGoal(data) {
@@ -12,7 +22,7 @@ export async function createGoal(data) {
     description: data.description || "",
     category: data.category || "Personal",
     priority: data.priority || "Medium",
-    status: "Active",
+    status: normalizeStatus(data.status) || "Active",
     startDate: data.startDate || new Date().toISOString().slice(0, 10),
     targetDate: data.targetDate || null,
     milestones: [],
@@ -31,15 +41,15 @@ export async function updateGoal(id, patch) {
 }
 
 export async function removeGoal(id) {
-  const projects = await db.getAll("projects");
-  await Promise.all(
-    projects.filter((p) => p.goalId === id).map((p) => db.put("projects", { ...p, goalId: null }))
-  );
-  return db.del("goals", id);
+  // Projects & tasks keep their goalId — restoring the goal
+  // restores every relationship untouched.
+  return recycle.softDelete("goals", id);
 }
 
-// Progress = milestone completion ratio blended with linked-project
-// task progress when projects exist (real-world growth signal).
+// Progress = milestone completion blended with linked work.
+// "Linked work" covers BOTH projects assigned to the goal AND tasks
+// linked directly to it, so completing/reopening a task instantly
+// moves the percentage up or down.
 export async function progressMap(goals, projects, tasks) {
   const doneSet = ["Completed", "Cancelled"];
   const projProg = {};
@@ -53,27 +63,37 @@ export async function progressMap(goals, projects, tasks) {
 
   const map = {};
   for (const g of goals) {
+    const status = normalizeStatus(g.status);
     const msTotal = g.milestones?.length || 0;
     const msDone = (g.milestones || []).filter((m) => m.done).length;
     const linked = projects.filter((p) => p.goalId === g.id);
+    const directTasks = tasks.filter((t) => t.goalId === g.id);
 
-    let taskPct = null;
-    if (linked.length) {
-      let done = 0,
-        total = 0;
-      for (const p of linked) {
-        done += projProg[p.id].done;
-        total += projProg[p.id].total;
-      }
-      if (total > 0) taskPct = Math.round((done / total) * 100);
+    let done = 0,
+      total = 0;
+    for (const p of linked) {
+      done += projProg[p.id].done;
+      total += projProg[p.id].total;
     }
+    for (const t of directTasks) {
+      total += 1;
+      if (doneSet.includes(t.status)) done += 1;
+    }
+    const taskPct = total > 0 ? Math.round((done / total) * 100) : null;
 
     let pct = null;
     if (msTotal && taskPct !== null) pct = Math.round(msDone * 0.4 + taskPct * 0.6);
     else if (msTotal) pct = Math.round((msDone / msTotal) * 100);
     else if (taskPct !== null) pct = taskPct;
 
-    map[g.id] = { pct, msDone, msTotal, taskPct };
+    map[g.id] = {
+      pct: status === "Completed" ? 100 : pct,
+      msDone,
+      msTotal,
+      taskPct,
+      taskDone: done,
+      taskTotal: total,
+    };
   }
   return map;
 }

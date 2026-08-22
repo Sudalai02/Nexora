@@ -1,6 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
 import { computeScore, tierOf } from "../ai/prioritizer.js";
+import * as recycle from "./recycleService.js";
 
 const OPEN = ["Todo", "In Progress", "Blocked"];
 
@@ -29,12 +30,14 @@ export async function createTask(data) {
     title: data.title.trim(),
     description: data.description || "",
     projectId: data.projectId || null,
-    goalId: null,
+    goalId: data.goalId || null,
     status: data.status || "Todo",
     priority: data.priority || "Medium",
     estimatedMinutes: Number(data.estimatedMinutes) || 30,
     actualMinutes: null,
     dueDate: data.dueDate || null,
+    startTime: data.startTime || null,
+    endTime: data.endTime || null,
     tags: [],
     energy: "Medium",
     createdAt: now,
@@ -59,7 +62,7 @@ export async function updateTask(id, patch) {
 }
 
 export async function removeTask(id) {
-  return db.del("tasks", id);
+  return recycle.softDelete("tasks", id);
 }
 
 export async function toggleComplete(id) {

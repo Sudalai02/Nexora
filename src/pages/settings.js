@@ -126,7 +126,6 @@ export async function renderSettings(view, alive = () => true) {
           <h3>Your data</h3>
           <div class="sub">Everything is stored locally on this device right now.</div>
           <div class="settings-row"><div class="settings-row-label">Export all data</div><button class="btn btn-secondary btn-sm" id="export-btn">Export JSON</button></div>
-          <div class="settings-row"><div class="settings-row-label">Reset all data</div><button class="btn btn-danger btn-sm" id="wipe-btn">Delete everything</button></div>
           <div class="settings-row"><div class="settings-row-label">Delete account</div><button class="btn btn-danger btn-sm" data-soon-account>Delete</button></div>
         </div>
       `;
@@ -258,19 +257,6 @@ export async function renderSettings(view, alive = () => true) {
       a.click();
       URL.revokeObjectURL(a.href);
       toast("Export downloaded");
-    });
-
-    // Wipe
-    view.querySelector("#wipe-btn")?.addEventListener("click", async () => {
-      const ok = await confirmModal({
-        title: "Delete everything?",
-        message: "All tasks, goals, notes, habits, and history stored on this device will be permanently removed. This cannot be undone.",
-        confirmLabel: "Delete everything",
-        danger: true,
-      });
-      if (!ok) return;
-      for (const store of db.STORES) await db.clear(store);
-      location.reload();
     });
 
     view.querySelectorAll("[data-soon]").forEach((b) =>

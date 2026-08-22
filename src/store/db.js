@@ -5,7 +5,7 @@
 // ============================================================
 
 const DB_NAME = "nexora";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = [
   "meta",
@@ -21,6 +21,21 @@ export const STORES = [
   "folders",
   "inbox",
   "events",
+  "recycleBin",
+  "alerts",
+];
+
+// Modules that support soft-delete / restore via the Recycle Bin.
+export const RECYCLABLE_STORES = [
+  "tasks",
+  "projects",
+  "goals",
+  "habits",
+  "notes",
+  "folders",
+  "events",
+  "focusSessions",
+  "inbox",
 ];
 
 let dbPromise = null;

@@ -2,7 +2,7 @@
 // NEXORA SERVICE WORKER — offline-first app shell
 // ============================================================
 
-const CACHE = "nexora-cache-v4";
+const CACHE = "nexora-cache-v5";
 const SHELL = [
   "./",
   "./index.html",
@@ -28,6 +28,24 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+// Clicking a notification focuses the app and routes to the alert's target.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const route = event.notification.data && event.notification.data.route;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if ("focus" in client) {
+          if (route) client.postMessage({ type: "nexora:navigate", route });
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(route ? `./#${route}` : "./");
+    })
   );
 });
 

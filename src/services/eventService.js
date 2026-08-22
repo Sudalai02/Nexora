@@ -1,5 +1,6 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
 
 export async function eventsInRange(startISO, endISO) {
   const events = await db.getAll("events");
@@ -21,6 +22,11 @@ export async function createEvent(data) {
   return event;
 }
 
+export async function allEvents() {
+  const events = await db.getAll("events");
+  return events.sort((a, b) => (a.date === b.date ? a.startHour - b.startHour : a.date < b.date ? -1 : 1));
+}
+
 export async function removeEvent(id) {
-  return db.del("events", id);
+  return recycle.softDelete("events", id);
 }

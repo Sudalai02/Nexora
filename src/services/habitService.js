@@ -1,6 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
-import { todayISO, weekdayOf, fromISO } from "../utils/dates.js";
+import { todayISO, weekdayOf, addDays } from "../utils/dates.js";
+import * as recycle from "./recycleService.js";
 
 const WD_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -31,9 +32,8 @@ export async function updateHabit(id, patch) {
 }
 
 export async function removeHabit(id) {
-  const logs = await db.getAll("habitLogs");
-  await Promise.all(logs.filter((l) => l.habitId === id).map((l) => db.del("habitLogs", l.id)));
-  return db.del("habits", id);
+  // Habit logs stay in place so a restore brings the full history back.
+  return recycle.softDelete("habits", id);
 }
 
 export function weekdayLabel(wd) {
@@ -71,7 +71,7 @@ export async function isDone(habitId, iso = todayISO()) {
 export async function streak(habit) {
   let count = 0;
   for (let d = 0; d < 365; d++) {
-    const iso = addDaysISO(d === 0 ? todayISO() : undefined, -d);
+    const iso = addDays(todayISO(), -d);
     if (!scheduledOn(habit, iso)) continue;
     if (await isDone(habit.id, iso)) {
       count += 1;
@@ -82,10 +82,31 @@ export async function streak(habit) {
   return count;
 }
 
-function addDaysISO(baseIso, days) {
-  const d = baseIso ? fromISO(baseIso) : new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+// Longest ever streak of completed scheduled days.
+export async function bestStreak(habit) {
+  const logs = (await db.getAll("habitLogs")).filter((l) => l.habitId === habit.id && l.done);
+  if (!logs.length) return 0;
+  const doneSet = new Set(logs.map((l) => l.date));
+  let best = 0;
+  // walk back from today and also from the earliest log to catch old runs
+  const candidates = [todayISO(), logs.map((l) => l.date).sort()[0]];
+  for (const start of candidates) {
+    let count = 0;
+    let cursor = start;
+    // step back until we leave a streak, bounded by two years
+    for (let i = 0; i < 730; i++) {
+      const prev = addDays(cursor, -1);
+      if (!scheduledOn(habit, prev)) {
+        cursor = prev;
+        continue; // rest days don't break the chain
+      }
+      if (!doneSet.has(prev)) break;
+      count += 1;
+      cursor = prev;
+    }
+    best = Math.max(best, count + (doneSet.has(start) ? 1 : 0));
+  }
+  return best;
 }
 
 // done/scheduled ratio over the last N days
@@ -97,7 +118,7 @@ export async function consistency(habits, days = 30) {
     let sched = 0,
       done = 0;
     for (let d = 1; d <= days; d++) {
-      const iso = addDaysISO(undefined, -d);
+      const iso = addDays(todayISO(), -d);
       if (!scheduledOn(h, iso)) continue;
       sched += 1;
       if (doneSet.has(`${h.id}:${iso}`)) done += 1;

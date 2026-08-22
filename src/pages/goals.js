@@ -1,3 +1,15 @@
+// ============================================================
+// GOALS + HABITS
+//
+// Goals: full filter system (Status / Category / Priority / Sort)
+// with working pagination. Statuses are Active, In Progress,
+// Completed, On Hold. Progress % is computed from milestones +
+// linked work and updates automatically as tasks complete.
+//
+// Habits: filter (All / Scheduled today / Archived), sort, and
+// pagination of their own.
+// ============================================================
+
 import { icon, fmtDate } from "../dom.js";
 import { openForm, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
@@ -9,30 +21,58 @@ import { runGoalPlanner } from "../ui/goalPlanner.js";
 import { addDays, todayISO, weekdayOf } from "../utils/dates.js";
 
 const WD_SHORT = ["S", "M", "T", "W", "T", "F", "S"];
+const GOAL_PAGE_SIZE = 6;
+const HABIT_PAGE_SIZE = 8;
+
+const gState = {
+  status: "all",
+  category: "all",
+  priority: "all",
+  sort: "priority", // priority | progress | target | newest
+  page: 1,
+};
+
+const hState = {
+  filter: "all", // all | today | archived
+  sort: "time", // time | name | streak
+  page: 1,
+};
 
 function goalModal(g = null) {
   return openForm({
     title: g ? "Edit goal" : "New goal",
     eyebrow: "Goal",
+    extraClass: "wide",
     values: g
       ? {
           title: g.title,
           description: g.description,
+          status: g.status,
           category: g.category,
           priority: g.priority,
           startDate: g.startDate,
           targetDate: g.targetDate || "",
         }
-      : { category: "Personal", priority: "Medium", startDate: todayISO() },
+      : { status: "Active", category: "Personal", priority: "Medium", startDate: todayISO() },
     fields: [
       { name: "title", label: "What do you want to achieve?", required: true, placeholder: "e.g. Launch my app in 30 days" },
       { name: "description", label: "Why it matters", type: "textarea", rows: 2 },
       {
-        name: "category", label: "Category", type: "select",
+        name: "status",
+        label: "Status",
+        type: "select",
+        options: goalService.GOAL_STATUSES.map((s) => ({ value: s, label: s })),
+      },
+      {
+        name: "category",
+        label: "Category",
+        type: "select",
         options: ["Personal", "Career", "Health", "Learning", "Finance"].map((v) => ({ value: v, label: v })),
       },
       {
-        name: "priority", label: "Priority", type: "select",
+        name: "priority",
+        label: "Priority",
+        type: "select",
         options: ["Urgent", "High", "Medium", "Low"].map((v) => ({ value: v, label: v })),
       },
       { name: "startDate", label: "Start date", type: "date" },
@@ -73,11 +113,19 @@ export async function renderGoals(view, alive = () => true) {
   if (!alive()) return;
   const prog = await goalService.progressMap(goals, projects, tasks);
   const today = todayISO();
-  const todayDoneSet = await habits.logsForDate(today);
 
+  // ---------- goal card ----------
   function goalCard(g) {
     const p = prog[g.id];
     const pct = p?.pct ?? 0;
+    const badge =
+      g.status === "Completed"
+        ? "good"
+        : g.status === "On Hold"
+          ? "warn"
+          : g.status === "In Progress"
+            ? "focus"
+            : "neutral";
     return `
       <div class="card goal-card">
         <div class="goal-card-top">
@@ -87,7 +135,7 @@ export async function renderGoals(view, alive = () => true) {
             <div class="goal-target">${icon("flag", "")} Target: ${g.targetDate ? fmtDate(g.targetDate) : "no date"} · ${g.category} · ${g.priority}</div>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
-            <span class="badge badge-focus">${g.status}</span>
+            <span class="badge badge-${badge}">${g.status}</span>
             <button class="icon-btn" data-edit-goal="${g.id}" aria-label="Edit goal">${icon("dots")}</button>
           </div>
         </div>
@@ -107,18 +155,211 @@ export async function renderGoals(view, alive = () => true) {
       </div>`;
   }
 
+  function filteredSortedGoals() {
+    let list = [...goals];
+    if (gState.status !== "all") list = list.filter((g) => g.status === gState.status);
+    if (gState.category !== "all") list = list.filter((g) => g.category === gState.category);
+    if (gState.priority !== "all") list = list.filter((g) => g.priority === gState.priority);
+
+    switch (gState.sort) {
+      case "progress":
+        list.sort((a, b) => (prog[b.id]?.pct ?? 0) - (prog[a.id]?.pct ?? 0));
+        break;
+      case "target":
+        list.sort((a, b) => (a.targetDate || "9999").localeCompare(b.targetDate || "9999"));
+        break;
+      case "newest":
+        list.sort((a, b) => ((a.startDate || "") < (b.startDate || "") ? 1 : -1));
+        break;
+      default: {
+        const rank = { Urgent: 0, High: 1, Medium: 2, Low: 3 };
+        list.sort((a, b) => rank[a.priority] - rank[b.priority]);
+      }
+    }
+    return list;
+  }
+
+  function draw() {
+    const filteredG = filteredSortedGoals();
+    const totalPages = Math.max(1, Math.ceil(filteredG.length / GOAL_PAGE_SIZE));
+    gState.page = Math.min(gState.page, totalPages);
+    const pageGoals = filteredG.slice((gState.page - 1) * GOAL_PAGE_SIZE, gState.page * GOAL_PAGE_SIZE);
+    const activeCount = goals.filter((g) => ["Active", "In Progress"].includes(g.status)).length;
+
+    view.innerHTML = `
+      <div class="page-header">
+        <div class="eyebrow">${activeCount} active goals</div>
+        <div class="page-title-row">
+          <h1>Goals</h1>
+          <button class="btn btn-primary btn-sm only-desktop" id="new-goal-btn">${icon("plus")} New goal</button>
+        </div>
+        <div class="sub">Tell the AI a goal — it plans the path down to tasks.</div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>Status</label>
+          <select class="filter-select" id="g-filter-status">
+            <option value="all" ${gState.status === "all" ? "selected" : ""}>All statuses</option>
+            ${goalService.GOAL_STATUSES.map((s) => `<option value="${s}" ${gState.status === s ? "selected" : ""}>${s}</option>`).join("")}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Category</label>
+          <select class="filter-select" id="g-filter-category">
+            <option value="all" ${gState.category === "all" ? "selected" : ""}>All categories</option>
+            ${["Personal", "Career", "Health", "Learning", "Finance"].map((c) => `<option value="${c}" ${gState.category === c ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Priority</label>
+          <select class="filter-select" id="g-filter-priority">
+            <option value="all" ${gState.priority === "all" ? "selected" : ""}>All priorities</option>
+            ${["Urgent", "High", "Medium", "Low"].map((p) => `<option value="${p}" ${gState.priority === p ? "selected" : ""}>${p}</option>`).join("")}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Sort by</label>
+          <select class="filter-select" id="g-sort">
+            ${[
+              ["priority", "Priority"],
+              ["progress", "Progress (high first)"],
+              ["target", "Target date"],
+              ["newest", "Newest first"],
+            ].map(([v, l]) => `<option value="${v}" ${gState.sort === v ? "selected" : ""}>${l}</option>`).join("")}
+          </select>
+        </div>
+        <span class="filter-count">${filteredG.length} goal${filteredG.length === 1 ? "" : "s"}</span>
+      </div>
+
+      ${
+        filteredG.length
+          ? pageGoals.map(goalCard).join("")
+          : goals.length
+            ? `<div class="empty-state"><h3>No matches</h3><p>No goals fit these filters.</p></div>`
+            : `<div class="empty-state"><h3>No goals yet</h3><p>Define what you're working toward.</p></div>`
+      }
+
+      ${filteredG.length > GOAL_PAGE_SIZE ? goalPaginationHTML(totalPages) : ""}
+
+      <button class="btn btn-primary btn-block only-mobile" id="new-goal-btn-m" style="margin-bottom: var(--sp-4);">${icon("plus")} New goal</button>
+
+      <section class="habit-section">
+        <div class="section-head">
+          <h2>Habits</h2>
+          <button class="btn btn-secondary btn-sm" id="new-habit-btn">${icon("plus")} New habit</button>
+        </div>
+        <div class="filter-bar compact">
+          <div class="seg-control" id="habit-seg">
+            <button class="seg-btn ${hState.filter === "all" ? "active" : ""}" data-hf="all">All</button>
+            <button class="seg-btn ${hState.filter === "today" ? "active" : ""}" data-hf="today">Scheduled today</button>
+            <button class="seg-btn ${hState.filter === "archived" ? "active" : ""}" data-hf="archived">Archived</button>
+          </div>
+          <div class="filter-group">
+            <label>Sort by</label>
+            <select class="filter-select" id="h-sort">
+              ${[
+                ["time", "Time of day"],
+                ["name", "Name A → Z"],
+                ["streak", "Streak (longest)"],
+              ].map(([v, l]) => `<option value="${v}" ${hState.sort === v ? "selected" : ""}>${l}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div id="habit-wrap"></div>
+      </section>
+
+      <div class="card" style="text-align:center; padding: var(--sp-8) var(--sp-6); border-style: dashed; margin-top: var(--sp-8);">
+        <div class="eyebrow" style="margin-bottom: 8px;">${icon("spark")} AI goal planning</div>
+        <p style="font-size: 13px; color: var(--graphite); max-width: 420px; margin: 0 auto 16px;">Describe an outcome in plain language and the AI will draft milestones and a first batch of tasks for your review.</p>
+        <button class="btn btn-secondary btn-sm" id="ai-plan-btn">Plan a new goal</button>
+      </div>
+    `;
+
+    wire();
+    renderHabits();
+  }
+
+  function goalPaginationHTML(totalPages) {
+    return `
+      <div class="pagination">
+        <button class="page-btn" id="gp-prev" ${gState.page <= 1 ? "disabled" : ""}>Prev</button>
+        <span class="page-info num">Page ${gState.page} of ${totalPages}</span>
+        <button class="page-btn" id="gp-next" ${gState.page >= totalPages ? "disabled" : ""}>Next</button>
+      </div>
+    `;
+  }
+
+  async function renderHabits() {
+    const wrap = view.querySelector("#habit-wrap");
+    let list = [...habitList];
+    if (hState.filter === "today") list = list.filter((h) => !h.archived && habits.scheduledOn(h, today));
+    else if (hState.filter === "archived") list = list.filter((h) => h.archived);
+    else list = list.filter((h) => !h.archived);
+
+    const streakMap = {};
+    await Promise.all(list.map(async (h) => (streakMap[h.id] = await habits.streak(h))));
+
+    if (hState.sort === "name") list.sort((a, b) => a.title.localeCompare(b.title));
+    else if (hState.sort === "streak") list.sort((a, b) => streakMap[b.id] - streakMap[a.id]);
+    else list.sort((a, b) => (a.timeOfDay || "").localeCompare(b.timeOfDay || ""));
+
+    const totalPages = Math.max(1, Math.ceil(list.length / HABIT_PAGE_SIZE));
+    hState.page = Math.min(hState.page, totalPages);
+    const pageItems = list.slice((hState.page - 1) * HABIT_PAGE_SIZE, hState.page * HABIT_PAGE_SIZE);
+
+    wrap.innerHTML =
+      (pageItems.length
+        ? `<div class="habit-grid">${(await Promise.all(pageItems.map(habitCard))).join("")}</div>`
+        : `<div class="empty-state" style="padding:var(--sp-6);"><h3>No habits here</h3><p>${hState.filter === "archived" ? "Nothing archived." : "Build routines that compound toward your goals."}</p></div>`) +
+      (list.length > HABIT_PAGE_SIZE
+        ? `
+        <div class="pagination">
+          <button class="page-btn" id="hp-prev" ${hState.page <= 1 ? "disabled" : ""}>Prev</button>
+          <span class="page-info num">Page ${hState.page} of ${totalPages}</span>
+          <button class="page-btn" id="hp-next" ${hState.page >= totalPages ? "disabled" : ""}>Next</button>
+        </div>`
+        : "");
+
+    wrap.querySelectorAll("[data-check]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        await habits.toggleLog(btn.dataset.check);
+        toast("Nice — habit logged");
+        renderGoals(view, alive);
+      })
+    );
+    wrap.querySelectorAll("[data-edit-habit]").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        const h = habitList.find((x) => x.id === btn.dataset.editHabit);
+        const res = await habitModal(h);
+        if (!res) return;
+        Object.assign(h, await habits.updateHabit(h.id, res));
+        toast("Habit updated");
+        renderGoals(view, alive);
+      })
+    );
+
+    wrap.querySelector("#hp-prev")?.addEventListener("click", () => {
+      if (hState.page > 1) {
+        hState.page -= 1;
+        renderHabits();
+      }
+    });
+    wrap.querySelector("#hp-next")?.addEventListener("click", () => {
+      hState.page += 1;
+      renderHabits();
+    });
+  }
+
   async function habitCard(h) {
     const streakCount = await habits.streak(h);
     const scheduledToday = habits.scheduledOn(h, today);
-    const doneToday = todayDoneSet.has(h.id);
+    const doneToday = await habits.isDone(h.id, today);
 
-    // last-7-days strip
     const days = [];
     for (let d = 6; d >= 0; d--) {
       const iso = addDays(today, -d);
-      const on = habits.scheduledOn(h, iso);
-      const done = await habits.isDone(h.id, iso);
-      days.push({ iso, wd: weekdayOf(iso), on, done, isToday: iso === today });
+      days.push({ iso, wd: weekdayOf(iso), on: habits.scheduledOn(h, iso), done: await habits.isDone(h.id, iso), isToday: iso === today });
     }
 
     return `
@@ -139,73 +380,16 @@ export async function renderGoals(view, alive = () => true) {
         <div class="habit-foot">
           <span class="streak-badge">🔥 <span class="num">${streakCount}</span> day${streakCount === 1 ? "" : "s"} streak</span>
           ${
-            scheduledToday
+            scheduledToday && !h.archived
               ? `<button class="habit-check-btn ${doneToday ? "done" : ""}" data-check="${h.id}">
                    ${doneToday ? `${icon("check")} Done` : "Mark done"}
                  </button>`
-              : `<span class="tag">Rest day</span>`
+              : h.archived
+                ? `<span class="tag">Archived</span>`
+                : `<span class="tag">Rest day</span>`
           }
         </div>
       </div>`;
-  }
-
-  function draw() {
-    view.innerHTML = `
-      <div class="page-header">
-        <div class="eyebrow">${goals.filter((g) => g.status === "Active").length} active goals</div>
-        <div class="page-title-row">
-          <h1>Goals</h1>
-          <button class="btn btn-primary btn-sm only-desktop" id="new-goal-btn">${icon("plus")} New goal</button>
-        </div>
-        <div class="sub">Tell the AI a goal — it plans the path down to tasks.</div>
-      </div>
-
-      ${goals.length ? goals.map(goalCard).join("") : `<div class="empty-state"><h3>No goals yet</h3><p>Define what you're working toward.</p></div>`}
-
-      <button class="btn btn-primary btn-block only-mobile" id="new-goal-btn-m" style="margin-bottom: var(--sp-4);">${icon("plus")} New goal</button>
-
-      <section class="habit-section">
-        <div class="section-head">
-          <h2>Habits</h2>
-          <button class="btn btn-secondary btn-sm" id="new-habit-btn">${icon("plus")} New habit</button>
-        </div>
-        <div class="habit-grid" id="habit-grid"></div>
-      </section>
-
-      <div class="card" style="text-align:center; padding: var(--sp-8) var(--sp-6); border-style: dashed; margin-top: var(--sp-8);">
-        <div class="eyebrow" style="margin-bottom: 8px;">${icon("spark")} AI goal planning</div>
-        <p style="font-size: 13px; color: var(--graphite); max-width: 420px; margin: 0 auto 16px;">Describe an outcome in plain language and the AI will draft milestones and a first batch of tasks for your review.</p>
-        <button class="btn btn-secondary btn-sm" id="ai-plan-btn">Plan a new goal</button>
-      </div>
-    `;
-
-    wire();
-    renderHabits();
-  }
-
-  async function renderHabits() {
-    const grid = view.querySelector("#habit-grid");
-    grid.innerHTML = (await Promise.all(habitList.map(habitCard))).join("") ||
-      `<div class="empty-state" style="padding:var(--sp-6);"><h3>No habits yet</h3><p>Build routines that compound toward your goals.</p></div>`;
-
-    grid.querySelectorAll("[data-check]").forEach((btn) =>
-      btn.addEventListener("click", async () => {
-        await habits.toggleLog(btn.dataset.check);
-        toast("Nice — habit logged");
-        renderGoals(view, alive);
-      })
-    );
-
-    grid.querySelectorAll("[data-edit-habit]").forEach((btn) =>
-      btn.addEventListener("click", async () => {
-        const h = habitList.find((x) => x.id === btn.dataset.editHabit);
-        const res = await habitModal(h);
-        if (!res) return;
-        Object.assign(h, await habits.updateHabit(h.id, res));
-        toast("Habit updated");
-        renderGoals(view, alive);
-      })
-    );
   }
 
   function wire() {
@@ -217,6 +401,52 @@ export async function renderGoals(view, alive = () => true) {
       if (created) renderGoals(view, alive);
     });
 
+    view.querySelector("#g-filter-status").addEventListener("change", (e) => {
+      gState.status = e.target.value;
+      gState.page = 1;
+      draw();
+    });
+    view.querySelector("#g-filter-category").addEventListener("change", (e) => {
+      gState.category = e.target.value;
+      gState.page = 1;
+      draw();
+    });
+    view.querySelector("#g-filter-priority").addEventListener("change", (e) => {
+      gState.priority = e.target.value;
+      gState.page = 1;
+      draw();
+    });
+    view.querySelector("#g-sort").addEventListener("change", (e) => {
+      gState.sort = e.target.value;
+      gState.page = 1;
+      draw();
+    });
+
+    view.querySelector("#gp-prev")?.addEventListener("click", () => {
+      if (gState.page > 1) {
+        gState.page -= 1;
+        draw();
+      }
+    });
+    view.querySelector("#gp-next")?.addEventListener("click", () => {
+      gState.page += 1;
+      draw();
+    });
+
+    view.querySelectorAll("[data-hf]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        hState.filter = btn.dataset.hf;
+        hState.page = 1;
+        view.querySelectorAll("[data-hf]").forEach((b) => b.classList.toggle("active", b === btn));
+        renderHabits();
+      })
+    );
+    view.querySelector("#h-sort").addEventListener("change", (e) => {
+      hState.sort = e.target.value;
+      hState.page = 1;
+      renderHabits();
+    });
+
     view.querySelectorAll("[data-edit-goal]").forEach((btn) =>
       btn.addEventListener("click", async () => {
         const g = goals.find((x) => x.id === btn.dataset.editGoal);
@@ -226,12 +456,13 @@ export async function renderGoals(view, alive = () => true) {
           values: { action: "edit" },
           fields: [
             {
-              name: "action", label: "Choose action", type: "select",
+              name: "action",
+              label: "Choose action",
+              type: "select",
               options: [
                 { value: "edit", label: "Edit details" },
                 { value: "add-milestone", label: "Add milestone step" },
-                { value: "complete", label: "Mark completed" },
-                { value: "pause", label: "Pause" },
+                ...goalService.GOAL_STATUSES.map((s) => ({ value: `status:${s}`, label: `Set status → ${s}` })),
                 { value: "delete", label: "Delete goal" },
               ],
             },
@@ -250,23 +481,20 @@ export async function renderGoals(view, alive = () => true) {
           const ms = [...(g.milestones || []), { label: res.milestoneLabel.trim(), done: false }];
           Object.assign(g, await goalService.updateGoal(g.id, { milestones: ms }));
           toast("Milestone added");
-        } else if (res.action === "complete") {
-          Object.assign(g, await goalService.updateGoal(g.id, { status: "Completed" }));
-          toast("Goal completed");
-        } else if (res.action === "pause") {
-          Object.assign(g, await goalService.updateGoal(g.id, { status: "Paused" }));
-          toast("Goal paused");
+        } else if (res.action.startsWith("status:")) {
+          Object.assign(g, await goalService.updateGoal(g.id, { status: res.action.split(":")[1] }));
+          toast(`Status set to ${g.status}`);
         } else if (res.action === "delete") {
           const ok = await confirmModal({
             title: "Delete goal?",
-            message: `“${g.title}” will be removed. Projects stay but become standalone.`,
+            message: `“${g.title}” moves to the Recycle Bin for 15 days. Linked projects become standalone but nothing is lost.`,
             confirmLabel: "Delete",
             danger: true,
           });
           if (!ok) return;
           await goalService.removeGoal(g.id);
           goals.splice(goals.indexOf(g), 1);
-          toast("Goal deleted");
+          toast("Moved to Recycle Bin");
         }
         draw();
       })

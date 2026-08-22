@@ -1,5 +1,6 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import * as recycle from "./recycleService.js";
 
 export async function allItems() {
   const items = await db.getAll("inbox");
@@ -36,5 +37,5 @@ export async function updateItem(id, patch) {
 }
 
 export async function removeItem(id) {
-  return db.del("inbox", id);
+  return recycle.softDelete("inbox", id);
 }
