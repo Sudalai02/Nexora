@@ -1,0 +1,13 @@
+{
+  "name": "Nexora — Personal Productivity OS",
+  "short_name": "Nexora",
+  "description": "An AI-powered productivity operating system that answers: what should I do right now?",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FAFAF9",
+  "theme_color": "#FAFAF9",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

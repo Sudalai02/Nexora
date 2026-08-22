@@ -1,0 +1,10 @@
+{
+  "name": "nexora",
+  "version": "0.1.0",
+  "description": "Nexora — Personal Productivity OS",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "npx --yes http-server -p 8080 -c-1 ."
+  }
+}

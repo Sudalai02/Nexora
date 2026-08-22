@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Nexora — Personal Productivity OS</title>
+<meta name="theme-color" content="#FAFAF9" />
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="manifest" href="manifest.json" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/styles/tokens.css" />
+<link rel="stylesheet" href="src/styles/base.css" />
+<link rel="stylesheet" href="src/styles/layout.css" />
+<link rel="stylesheet" href="src/styles/components.css" />
+<link rel="stylesheet" href="src/styles/pages.css" />
+<link rel="stylesheet" href="src/styles/features.css" />
+</head>
+<body>
+
+<div id="app" class="app">
+
+  <!-- ===================== DESKTOP SIDEBAR ===================== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">◈</span>
+      <span class="brand-name">Nexora</span>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Main navigation">
+      <a href="#/home" class="nav-item" data-route="home">
+        <span class="nav-icon" data-icon="home"></span><span>Home</span>
+      </a>
+      <a href="#/tasks" class="nav-item" data-route="tasks">
+        <span class="nav-icon" data-icon="tasks"></span><span>Tasks</span>
+      </a>
+      <a href="#/projects" class="nav-item" data-route="projects">
+        <span class="nav-icon" data-icon="projects"></span><span>Projects</span>
+      </a>
+      <a href="#/goals" class="nav-item" data-route="goals">
+        <span class="nav-icon" data-icon="goals"></span><span>Goals</span>
+      </a>
+      <a href="#/calendar" class="nav-item" data-route="calendar">
+        <span class="nav-icon" data-icon="calendar"></span><span>Calendar</span>
+      </a>
+      <a href="#/focus" class="nav-item" data-route="focus">
+        <span class="nav-icon" data-icon="focus"></span><span>Focus</span>
+      </a>
+      <a href="#/notes" class="nav-item" data-route="notes">
+        <span class="nav-icon" data-icon="notes"></span><span>Notes</span>
+      </a>
+      <a href="#/inbox" class="nav-item" data-route="inbox">
+        <span class="nav-icon" data-icon="inbox"></span><span>Inbox</span>
+        <span class="nav-badge" id="inbox-badge" style="display:none;"></span>
+      </a>
+      <a href="#/insights" class="nav-item" data-route="insights">
+        <span class="nav-icon" data-icon="insights"></span><span>Insights</span>
+      </a>
+      <a href="#/assistant" class="nav-item" data-route="assistant">
+        <span class="nav-icon" data-icon="assistant"></span><span>AI Assistant</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="#/settings" class="nav-item" data-route="settings">
+        <span class="nav-icon" data-icon="settings"></span><span>Settings</span>
+      </a>
+      <button class="user-chip" id="user-chip">
+        <span class="avatar">A</span>
+        <span class="user-chip-info">
+          <span class="user-chip-name">Alex Rivera</span>
+          <span class="user-chip-meta">Personal workspace</span>
+        </span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===================== MAIN CONTENT ===================== -->
+  <div class="main-wrap">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="menu-toggle" aria-label="Open menu">
+        <span class="nav-icon" data-icon="menu"></span>
+      </button>
+      <div class="search-shell" id="search-shell">
+        <span class="nav-icon" data-icon="search"></span>
+        <input type="text" placeholder="Search tasks, projects, notes, goals…" id="global-search" />
+        <kbd class="kbd only-desktop">⌘K</kbd>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" aria-label="Notifications" id="notif-btn">
+          <span class="nav-icon" data-icon="bell"></span>
+          <span class="dot"></span>
+        </button>
+        <button class="btn btn-primary btn-sm only-desktop" id="quick-add-btn">
+          <span class="nav-icon" data-icon="plus"></span> Quick add
+        </button>
+      </div>
+    </header>
+
+    <main class="view" id="view" role="main">
+      <!-- Views injected here by router.js -->
+    </main>
+  </div>
+
+  <!-- ===================== MOBILE BOTTOM NAV ===================== -->
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <a href="#/home" class="bn-item" data-route="home"><span class="nav-icon" data-icon="home"></span><span>Home</span></a>
+    <a href="#/tasks" class="bn-item" data-route="tasks"><span class="nav-icon" data-icon="tasks"></span><span>Tasks</span></a>
+    <button class="bn-fab" id="fab-add" aria-label="Quick add"><span class="nav-icon" data-icon="plus"></span></button>
+    <a href="#/focus" class="bn-item" data-route="focus"><span class="nav-icon" data-icon="focus"></span><span>Focus</span></a>
+    <a href="#/more" class="bn-item" data-route="more"><span class="nav-icon" data-icon="menu"></span><span>More</span></a>
+  </nav>
+
+</div>
+
+<!-- ===================== QUICK ADD MODAL ===================== -->
+<div class="modal-backdrop" id="quick-add-backdrop">
+  <div class="modal quick-add-modal" role="dialog" aria-modal="true" aria-label="Quick add">
+    <div class="quick-add-input-row">
+      <span class="nav-icon" data-icon="plus"></span>
+      <input type="text" id="quick-add-input" placeholder="Add a task, note, or idea… try “Call Arun tomorrow 9am”" autocomplete="off" />
+    </div>
+    <div class="quick-add-hint">Press <kbd class="kbd">Enter</kbd> to capture to Inbox · <kbd class="kbd">Esc</kbd> to close</div>
+  </div>
+</div>
+
+<!-- ===================== MOBILE "MORE" SHEET ===================== -->
+<div class="modal-backdrop" id="more-sheet-backdrop">
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="More">
+    <div class="sheet-handle"></div>
+    <div class="sheet-grid">
+      <a href="#/projects" class="sheet-item"><span class="nav-icon" data-icon="projects"></span>Projects</a>
+      <a href="#/goals" class="sheet-item"><span class="nav-icon" data-icon="goals"></span>Goals</a>
+      <a href="#/calendar" class="sheet-item"><span class="nav-icon" data-icon="calendar"></span>Calendar</a>
+      <a href="#/notes" class="sheet-item"><span class="nav-icon" data-icon="notes"></span>Notes</a>
+      <a href="#/inbox" class="sheet-item"><span class="nav-icon" data-icon="inbox"></span>Inbox</a>
+      <a href="#/insights" class="sheet-item"><span class="nav-icon" data-icon="insights"></span>Insights</a>
+      <a href="#/assistant" class="sheet-item"><span class="nav-icon" data-icon="assistant"></span>AI Assistant</a>
+      <a href="#/settings" class="sheet-item"><span class="nav-icon" data-icon="settings"></span>Settings</a>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
