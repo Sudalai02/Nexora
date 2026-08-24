@@ -1,7 +1,8 @@
 import { icon } from "../dom.js";
-import { openForm, confirm as confirmModal } from "../ui/modal.js";
+import { openForm, openPanel, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
 import * as eventService from "../services/eventService.js";
+import { EVENT_TYPE_OPTIONS, typeMeta } from "../config/eventTypes.js";
 import {
   todayISO,
   addDays,
@@ -27,26 +28,22 @@ function weekDays(iso) {
   return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
 }
 
-function eventModal(dateISO) {
+function eventModal(dateISO, ev = null) {
+  const toHHMM = (h) => `${String(Math.floor(h)).padStart(2, "0")}:${String(Math.round((h % 1) * 60)).padStart(2, "0")}`;
   return openForm({
-    title: "New event",
+    title: ev ? "Edit event" : "New event",
     eyebrow: "Calendar",
-    values: { date: dateISO || todayISO(), type: "meeting", startHour: "10:00", endHour: "11:00" },
+    values: ev
+      ? { title: ev.title, type: ev.type, date: ev.date, startHour: toHHMM(ev.startHour), endHour: toHHMM(ev.endHour) }
+      : { date: dateISO || todayISO(), type: "meeting", startHour: "10:00", endHour: "11:00" },
     fields: [
-      { name: "title", label: "Event title", required: true },
-      {
-        name: "type", label: "Type", type: "select",
-        options: [
-          { value: "meeting", label: "Meeting" },
-          { value: "focus", label: "Focus block" },
-          { value: "deadline", label: "Deadline" },
-        ],
-      },
+      { name: "title", label: "Event title", required: true, placeholder: "Dentist appointment" },
+      { name: "type", label: "Type", type: "select", options: EVENT_TYPE_OPTIONS },
       { name: "date", label: "Date", type: "date" },
       { name: "startHour", label: "Starts", type: "time" },
       { name: "endHour", label: "Ends", type: "time" },
     ],
-    submitLabel: "Add to calendar",
+    submitLabel: ev ? "Save changes" : "Add to calendar",
   });
 }
 
@@ -221,19 +218,54 @@ export async function renderCalendar(view, alive = () => true) {
     toast("AI weekly planning arrives with the AI integration step")
   );
 
+  // Tap an event → action sheet: details + Edit + Delete
   view.querySelectorAll("[data-ev]").forEach((el) =>
     el.addEventListener("click", async (e) => {
       e.stopPropagation();
       const ev = events.find((x) => x.id === el.dataset.ev);
-      const ok = await confirmModal({
-        title: "Remove event?",
-        message: `“${ev.title}” will be removed from your calendar.`,
-        confirmLabel: "Remove",
-        danger: true,
+      if (!ev) return;
+      const tm = typeMeta(ev.type);
+      const res = await openPanel({
+        title: ev.title,
+        eyebrow: `${tm.emoji} ${tm.label} · ${ev.date}`,
+        bodyHTML: `
+          <div class="event-detail-rows">
+            <div class="meter-row"><span>Time</span><b>${fmtHour(ev.startHour)}${ev.endHour ? ` – ${fmtHour(ev.endHour)}` : ""}</b></div>
+            ${ev.notes ? `<div class="meter-row"><span>Notes</span><b>${ev.notes}</b></div>` : ""}
+          </div>
+        `,
+        actions: [
+          { id: "edit", label: "✏️ Edit event", class: "btn-secondary" },
+          { id: "delete", label: "🗑️ Delete event", class: "btn-danger" },
+        ],
       });
-      if (!ok) return;
-      await eventService.removeEvent(ev.id);
-      toast("Event removed");
+      if (!res) return;
+
+      if (res.action === "edit") {
+        const patch = await eventModal(ev.date, ev);
+        if (!patch?.title) return;
+        let end = toFloat(patch.endHour);
+        const start = toFloat(patch.startHour);
+        if (end <= start) end = start + 1;
+        await eventService.updateEvent(ev.id, {
+          title: patch.title,
+          type: patch.type,
+          date: patch.date,
+          startHour: start,
+          endHour: end,
+        });
+        toast("Event updated");
+      } else if (res.action === "delete") {
+        const ok = await confirmModal({
+          title: "Remove event?",
+          message: `“${ev.title}” will be removed from your calendar.`,
+          confirmLabel: "Remove",
+          danger: true,
+        });
+        if (!ok) return;
+        await eventService.removeEvent(ev.id);
+        toast("Event removed");
+      }
       renderCalendar(view, alive);
     })
   );

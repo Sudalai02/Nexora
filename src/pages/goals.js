@@ -11,12 +11,13 @@
 // ============================================================
 
 import { icon, fmtDate } from "../dom.js";
-import { openForm, confirm as confirmModal } from "../ui/modal.js";
+import { openForm, openPanel, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
 import * as goalService from "../services/goalService.js";
 import * as projectService from "../services/projectService.js";
 import * as taskService from "../services/taskService.js";
 import * as habits from "../services/habitService.js";
+import * as recycleService from "../services/recycleService.js";
 import { runGoalPlanner } from "../ui/goalPlanner.js";
 import { addDays, todayISO, weekdayOf } from "../utils/dates.js";
 
@@ -331,10 +332,42 @@ export async function renderGoals(view, alive = () => true) {
     wrap.querySelectorAll("[data-edit-habit]").forEach((btn) =>
       btn.addEventListener("click", async () => {
         const h = habitList.find((x) => x.id === btn.dataset.editHabit);
-        const res = await habitModal(h);
+        if (!h) return;
+        const res = await openPanel({
+          title: h.title,
+          eyebrow: `🔄 ${schedLabel(h)}`,
+          actions: [
+            { id: "edit", label: "✏️ Edit habit", class: "btn-secondary" },
+            {
+              id: "archive",
+              label: h.archived ? "📤 Unarchive habit" : "📦 Archive habit",
+              class: "btn-secondary",
+            },
+            { id: "delete", label: "🗑️ Delete habit", class: "btn-danger" },
+          ],
+        });
         if (!res) return;
-        Object.assign(h, await habits.updateHabit(h.id, res));
-        toast("Habit updated");
+
+        if (res.action === "edit") {
+          const upd = await habitModal(h);
+          if (!upd) return;
+          Object.assign(h, await habits.updateHabit(h.id, upd));
+          toast("Habit updated");
+        } else if (res.action === "archive") {
+          Object.assign(h, await habits.updateHabit(h.id, { archived: !h.archived }));
+          toast(h.archived ? "Habit archived" : "Habit restored");
+        } else if (res.action === "delete") {
+          const ok = await confirmModal({
+            title: "Delete habit?",
+            message: `“${h.title}” and its history move to the Recycle Bin for 15 days.`,
+            confirmLabel: "Delete",
+            danger: true,
+          });
+          if (!ok) return;
+          await recycleService.softDelete("habits", h.id);
+          habitList.splice(habitList.indexOf(h), 1);
+          toast("Moved to Recycle Bin");
+        }
         renderGoals(view, alive);
       })
     );
@@ -450,40 +483,44 @@ export async function renderGoals(view, alive = () => true) {
     view.querySelectorAll("[data-edit-goal]").forEach((btn) =>
       btn.addEventListener("click", async () => {
         const g = goals.find((x) => x.id === btn.dataset.editGoal);
-        const res = await openForm({
-          title: "Goal actions",
-          eyebrow: g.title,
-          values: { action: "edit" },
-          fields: [
-            {
-              name: "action",
-              label: "Choose action",
-              type: "select",
-              options: [
-                { value: "edit", label: "Edit details" },
-                { value: "add-milestone", label: "Add milestone step" },
-                ...goalService.GOAL_STATUSES.map((s) => ({ value: `status:${s}`, label: `Set status → ${s}` })),
-                { value: "delete", label: "Delete goal" },
-              ],
-            },
-            { name: "milestoneLabel", label: "New milestone text (only for adding)", placeholder: "e.g. Ship beta", value: "" },
+        if (!g) return;
+        const res = await openPanel({
+          title: g.title,
+          eyebrow: `🎯 ${g.category} · ${g.priority} · ${prog[g.id]?.pct ?? 0}%`,
+          actions: [
+            { id: "edit", label: "✏️ Edit details", class: "btn-secondary" },
+            { id: "milestone", label: "＋ Add milestone step", class: "btn-secondary" },
+            ...(g.status !== "Completed"
+              ? [{ id: "complete", label: "🏁 Mark as Completed", class: "btn-secondary" }]
+              : []),
+            { id: "hold", label: "⏸️ Put On Hold", class: "btn-ghost" },
+            { id: "delete", label: "🗑️ Delete goal", class: "btn-danger" },
           ],
-          submitLabel: "Apply",
         });
         if (!res) return;
+
         if (res.action === "edit") {
           const upd = await goalModal(g);
           if (!upd) return;
           Object.assign(g, await goalService.updateGoal(g.id, upd));
           toast("Goal updated");
-        } else if (res.action === "add-milestone") {
-          if (!res.milestoneLabel.trim()) return;
-          const ms = [...(g.milestones || []), { label: res.milestoneLabel.trim(), done: false }];
+        } else if (res.action === "milestone") {
+          const m = await openForm({
+            title: "Add milestone",
+            eyebrow: g.title,
+            fields: [{ name: "label", label: "Milestone", required: true, placeholder: "e.g. Ship beta" }],
+            submitLabel: "Add",
+          });
+          if (!m?.label?.trim()) return;
+          const ms = [...(g.milestones || []), { label: m.label.trim(), done: false }];
           Object.assign(g, await goalService.updateGoal(g.id, { milestones: ms }));
           toast("Milestone added");
-        } else if (res.action.startsWith("status:")) {
-          Object.assign(g, await goalService.updateGoal(g.id, { status: res.action.split(":")[1] }));
-          toast(`Status set to ${g.status}`);
+        } else if (res.action === "complete") {
+          Object.assign(g, await goalService.updateGoal(g.id, { status: "Completed" }));
+          toast("Goal completed 🎉");
+        } else if (res.action === "hold") {
+          Object.assign(g, await goalService.updateGoal(g.id, { status: "On Hold" }));
+          toast("Goal on hold");
         } else if (res.action === "delete") {
           const ok = await confirmModal({
             title: "Delete goal?",
@@ -514,9 +551,51 @@ export async function renderGoals(view, alive = () => true) {
   async function createGoalFlow() {
     const res = await goalModal();
     if (!res) return;
-    goals.push(await goalService.createGoal(res));
+    const created = await goalService.createGoal(res);
+    goals.push(created);
     toast("Goal created");
     draw();
+    await linkWorkFlow(created);
+  }
+
+  // After creating a goal: optionally link existing projects & tasks to it.
+  async function linkWorkFlow(goal) {
+    const freeProjects = projects.filter(
+      (p) => !p.goalId && !["Completed", "Cancelled"].includes(p.status)
+    );
+    const freeTasks = tasks.filter((t) => !t.goalId && !["Completed", "Cancelled"].includes(t.status));
+    if (!freeProjects.length && !freeTasks.length) return;
+
+    const escA = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+    const res = await openPanel({
+      title: "Link work to this goal",
+      eyebrow: `🎯 ${goal.title}`,
+      bodyHTML: `
+        ${freeProjects.length ? `<div class="form-label">Projects</div>
+        ${freeProjects
+          .map((p) => `<label class="pp-task"><input type="checkbox" data-link-project="${p.id}" /><span>${escA(p.name)}</span></label>`)
+          .join("")}` : ""}
+        ${freeTasks.length ? `<div class="form-label" style="margin-top:${freeProjects.length ? "12px" : "0"};">Tasks</div>
+        ${freeTasks
+          .slice(0, 12)
+          .map((t) => `<label class="pp-task"><input type="checkbox" data-link-task="${t.id}" /><span>${escA(t.title)}</span></label>`)
+          .join("")}` : ""}
+        <div class="form-hint" style="margin-top:10px;">Linked work rolls up into this goal's progress automatically.</div>
+      `,
+      actions: [{ id: "link", label: "Link selected", class: "btn-primary" }],
+    });
+    if (res?.action !== "link") return;
+
+    const projectIds = [...res.body.querySelectorAll("[data-link-project]:checked")].map((c) => c.dataset.linkProject);
+    const taskIds = [...res.body.querySelectorAll("[data-link-task]:checked")].map((c) => c.dataset.linkTask);
+    for (const pid of projectIds) {
+      await projectService.updateProject(pid, { goalId: goal.id });
+    }
+    for (const tid of taskIds) {
+      await taskService.updateTask(tid, { goalId: goal.id });
+    }
+    if (projectIds.length + taskIds.length)
+      toast(`Linked ${projectIds.length} project${projectIds.length === 1 ? "" : "s"}, ${taskIds.length} task${taskIds.length === 1 ? "" : "s"}`);
   }
 
   async function createHabitFlow() {

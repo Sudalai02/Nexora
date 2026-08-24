@@ -1,6 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
 import * as recycle from "./recycleService.js";
+import { emit } from "../utils/bus.js";
 
 export const GOAL_STATUSES = ["Active", "In Progress", "Completed", "On Hold"];
 
@@ -29,6 +30,7 @@ export async function createGoal(data) {
     createdAt: new Date().toISOString(),
   };
   await db.put("goals", goal);
+  emit("data-changed", { entity: "goals" });
   return goal;
 }
 
@@ -37,13 +39,16 @@ export async function updateGoal(id, patch) {
   if (!goal) throw new Error(`Goal ${id} not found`);
   const next = { ...goal, ...patch };
   await db.put("goals", next);
+  emit("data-changed", { entity: "goals" });
   return next;
 }
 
 export async function removeGoal(id) {
   // Projects & tasks keep their goalId — restoring the goal
   // restores every relationship untouched.
-  return recycle.softDelete("goals", id);
+  const entry = await recycle.softDelete("goals", id);
+  emit("data-changed", { entity: "goals" });
+  return entry;
 }
 
 // Progress = milestone completion blended with linked work.

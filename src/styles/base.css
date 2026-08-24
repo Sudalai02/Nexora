@@ -6,8 +6,8 @@ body {
   font-family: var(--font-body);
   background: var(--paper);
   color: var(--ink);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-base, 15px);
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
@@ -15,8 +15,8 @@ body {
 h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; color: var(--ink); }
 
 a { color: inherit; text-decoration: none; }
-button { font-family: inherit; cursor: pointer; background: none; border: none; color: inherit; }
-input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+button { font-family: inherit; cursor: pointer; background: none; border: none; color: inherit; font-size: inherit; }
+input, textarea, select { font-family: inherit; font-size: max(16px, inherit); color: inherit; } /* 16px+ prevents iOS zoom */
 ul, ol { list-style: none; }
 img, svg { display: block; max-width: 100%; }
 

@@ -1,6 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
 import * as recycle from "./recycleService.js";
+import { emit } from "../utils/bus.js";
 
 export async function allItems() {
   const items = await db.getAll("inbox");
@@ -21,21 +22,28 @@ export async function addItem(type, content) {
     createdAt: new Date().toISOString(),
   };
   await db.put("inbox", item);
+  emit("data-changed", { entity: "inbox" });
   return item;
 }
 
 export async function markProcessed(id) {
   const item = await db.get("inbox", id);
   if (!item) return null;
-  return db.put("inbox", { ...item, processed: true });
+  const next = await db.put("inbox", { ...item, processed: true });
+  emit("data-changed", { entity: "inbox" });
+  return next;
 }
 
 export async function updateItem(id, patch) {
   const item = await db.get("inbox", id);
   if (!item) throw new Error(`Inbox item ${id} not found`);
-  return db.put("inbox", { ...item, ...patch });
+  const next = await db.put("inbox", { ...item, ...patch });
+  emit("data-changed", { entity: "inbox" });
+  return next;
 }
 
 export async function removeItem(id) {
-  return recycle.softDelete("inbox", id);
+  const entry = await recycle.softDelete("inbox", id);
+  emit("data-changed", { entity: "inbox" });
+  return entry;
 }

@@ -43,15 +43,18 @@ export async function updateBellBadge() {
 
 function itemHTML(a) {
   return `
-    <button class="bell-item ${a.read ? "" : "unread"}" data-route="${a.route || ""}" data-alert="${a.id}">
-      <span class="bell-item-icon">${icon(TYPE_ICON[a.type] || "alert")}</span>
-      <span class="bell-item-body">
-        <span class="bell-item-title">${a.title}</span>
-        ${a.body ? `<span class="bell-item-text">${a.body}</span>` : ""}
-        <span class="bell-item-ago">${ago(a.createdAt)}</span>
-      </span>
-      ${a.read ? "" : '<span class="bell-unread-dot"></span>'}
-    </button>
+    <div class="bell-item-wrap">
+      <div class="bell-clear-bg">Clear ✕</div>
+      <button class="bell-item ${a.read ? "" : "unread"}" data-route="${a.route || ""}" data-alert="${a.id}">
+        <span class="bell-item-icon">${icon(TYPE_ICON[a.type] || "alert")}</span>
+        <span class="bell-item-body">
+          <span class="bell-item-title">${a.title}</span>
+          ${a.body ? `<span class="bell-item-text">${a.body}</span>` : ""}
+          <span class="bell-item-ago">${ago(a.createdAt)}</span>
+        </span>
+        ${a.read ? "" : '<span class="bell-unread-dot"></span>'}
+      </button>
+    </div>
   `;
 }
 
@@ -86,6 +89,7 @@ async function renderPanel() {
           : `<div class="bell-empty">Quiet for now.<br /><small>Briefings, reminders and deadline alerts will land here.</small></div>`
       }
     </div>
+    ${alerts.length ? `<div class="bell-hint">← Swipe a notification to clear it</div>` : ""}
     <a class="bell-foot" href="#/settings">Notification settings</a>
   `;
 
@@ -102,14 +106,65 @@ async function renderPanel() {
     }
   });
 
-  panel.querySelectorAll(".bell-item").forEach((item) =>
+  panel.querySelectorAll(".bell-item").forEach((item) => {
     item.addEventListener("click", () => {
+      if (item.dataset.swiped === "1") return; // ignore click right after a swipe
       notif.markAllRead();
       closeBell();
       const route = item.dataset.route;
       if (route) window.location.hash = route;
-    })
-  );
+    });
+    attachSwipeToClear(item);
+  });
+
+  // ---- swipe-to-clear: drag a notification left to dismiss it ----
+  function attachSwipeToClear(item) {
+    let startX = 0;
+    let startY = 0;
+    let dx = 0;
+    let dragging = false;
+    const THRESHOLD = 96;
+
+    item.addEventListener("touchstart", (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      dx = 0;
+      dragging = true;
+      item.classList.add("swiping");
+    }, { passive: true });
+
+    item.addEventListener("touchmove", (e) => {
+      if (!dragging) return;
+      const mx = e.touches[0].clientX - startX;
+      const my = e.touches[0].clientY - startY;
+      // vertical scrolling wins if the gesture is mostly vertical
+      if (Math.abs(my) > Math.abs(mx)) {
+        dragging = false;
+        item.classList.remove("swiping");
+        item.style.transform = "";
+        return;
+      }
+      dx = Math.min(0, mx); // left only
+      item.style.transform = `translateX(${dx}px)`;
+    }, { passive: true });
+
+    const settle = () => {
+      if (!dragging) return;
+      dragging = false;
+      item.classList.remove("swiping");
+      if (dx < -THRESHOLD) {
+        item.style.transform = "translateX(-110%)";
+        item.style.opacity = "0";
+        setTimeout(async () => {
+          await notif.removeAlert(item.dataset.alert);
+        }, 160);
+      } else {
+        item.style.transform = "";
+      }
+    };
+    item.addEventListener("touchend", settle);
+    item.addEventListener("touchcancel", settle);
+  }
 }
 
 export function closeBell() {

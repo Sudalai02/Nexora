@@ -1,23 +1,25 @@
 // ============================================================
-// FOCUS — pomodoro engine.
+// FOCUS — pomodoro engine (v2 design).
+//
+// Layout: stat cards (Today / This week / Sessions) → mode tabs
+// (Focus · Short break · Long break) → big ring timer → controls.
+// The ⚙ gear opens pomodoro settings (persisted). History keeps
+// ONLY Today + this week; anything older is pruned.
 //
 // Timing is wall-clock based: instead of decrementing a counter,
-// we store an absolute `endsAt` timestamp and derive the remaining
-// time from Date.now(). Background tabs, laptop sleep, and page
-// navigation can no longer make the timer drift or silently stall.
-//
-// After a focus session ends, the user lands on an offer screen
-// with explicit [Start Break] and [Skip] actions — nothing starts
-// without consent.
+// we store an absolute `endsAt` timestamp and derive remaining
+// time from Date.now(). Background tabs, sleep, and navigation
+// cannot make the timer drift.
 // ============================================================
 
 import { icon } from "../dom.js";
-import { secondsToClock, todayISO } from "../utils/dates.js";
+import { secondsToClock, todayISO, startOfWeekISO, minutesToHuman } from "../utils/dates.js";
 import { openForm, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
+import * as db from "../store/db.js";
 import * as focusService from "../services/focusService.js";
 import * as taskService from "../services/taskService.js";
-import { getSettings } from "../services/settingsService.js";
+import { getSettings, saveSettings } from "../services/settingsService.js";
 import { showNative } from "../services/notificationService.js";
 
 const OUTCOMES = ["Completed", "Partial", "Distracted", "Blocked"];
@@ -37,14 +39,23 @@ const T = {
   handle: null,
 };
 
+export function focusSnapshot() {
+  if ((T.phase === "focus" || T.phase === "break") && (T.running || T.secondsLeft > 0)) {
+    return {
+      active: true,
+      phase: T.phase,
+      breakKind: T.breakKind,
+      title: T.taskTitle || "Deep work",
+      secondsLeft: remainingSeconds(),
+      totalSeconds: T.totalSeconds,
+    };
+  }
+  return { active: false };
+}
+
 function remainingSeconds() {
   if (T.running && T.endsAt) return Math.max(0, Math.ceil((T.endsAt - Date.now()) / 1000));
   return Math.max(0, T.secondsLeft);
-}
-
-function ringProgress() {
-  if (!T.totalSeconds) return 0;
-  return Math.round(((T.totalSeconds - remainingSeconds()) / T.totalSeconds) * 360);
 }
 
 async function persistSession(outcomeLabel, note = "") {
@@ -63,15 +74,12 @@ async function persistSession(outcomeLabel, note = "") {
   });
 }
 
-function nextBreakKind(settings) {
-  const n = settings.pomodoro.sessionsBeforeLongBreak;
-  return T.sessionsDone % n === 0 ? "long" : "short";
-}
-
 export async function renderFocus(view, alive = () => true) {
-  const [settings, tasks] = await Promise.all([getSettings(), taskService.openTasks()]);
+  let [settings, tasks] = await Promise.all([getSettings(), taskService.openTasks()]);
   if (!alive()) return;
   const pomo = settings.pomodoro;
+
+  let mode = "focus"; // focus | short | long
 
   function stopTicker() {
     if (T.handle) clearInterval(T.handle);
@@ -135,9 +143,14 @@ export async function renderFocus(view, alive = () => true) {
       const t = tasks.find((x) => x.id === T.taskId);
       if (t && t.status === "Todo") await taskService.updateTask(T.taskId, { status: "In Progress" });
     }
-    T.breakKind = nextBreakKind(settings);
+    T.breakKind = nextBreakKind();
     T.phase = "offer"; // wait for explicit user choice
     draw();
+  }
+
+  function nextBreakKind() {
+    const n = pomo.sessionsBeforeLongBreak;
+    return T.sessionsDone % n === 0 ? "long" : "short";
   }
 
   function startBreak() {
@@ -177,6 +190,7 @@ export async function renderFocus(view, alive = () => true) {
     await persistSession("Distracted");
     T.phase = "idle";
     T.totalSeconds = 0;
+    T.secondsLeft = 0;
     draw();
   }
 
@@ -184,9 +198,19 @@ export async function renderFocus(view, alive = () => true) {
     const disp = view.querySelector("#timer-display");
     if (!disp) return;
     disp.textContent = secondsToClock(remainingSeconds());
-    const ring = view.querySelector(".focus-ring");
-    if (ring)
-      ring.style.background = `conic-gradient(var(--${T.phase === "focus" ? "focus" : "good"}) ${ringProgress()}deg, var(--hairline) ${ringProgress()}deg 360deg)`;
+    paintRing();
+  }
+
+  function paintRing() {
+    const ring = view.querySelector(".focus-ring-v2");
+    if (!ring) return;
+    const deg = T.totalSeconds ? Math.round(((T.totalSeconds - remainingSeconds()) / T.totalSeconds) * 360) : 0;
+    const color = T.phase === "break" ? "var(--good)" : T.phase === "focus" ? "var(--focus)" : "var(--graphite-dim)";
+    if (T.phase === "idle") {
+      ring.style.background = "conic-gradient(var(--hairline-strong) 0deg 360deg)";
+    } else {
+      ring.style.background = `conic-gradient(${color} ${deg}deg, var(--hairline) ${deg}deg 360deg)`;
+    }
   }
 
   function updateToggle() {
@@ -194,16 +218,10 @@ export async function renderFocus(view, alive = () => true) {
     if (btn) btn.innerHTML = icon(T.running ? "pause" : "play");
   }
 
-  // ---------------- RENDER ----------------
   async function draw() {
-    if (T.phase === "offer") {
-      renderOffer();
-      return;
-    }
-    if (T.phase === "break") {
-      renderBreak();
-      return;
-    }
+    if (!alive()) return;
+    if (T.phase === "offer") return renderOffer();
+    if (T.phase === "break") return renderBreak();
 
     const sessions = await focusService.allSessions();
     if (!alive()) return;
@@ -212,32 +230,33 @@ export async function renderFocus(view, alive = () => true) {
     else renderRunning();
   }
 
-  // ---- break OFFER screen: Start Break / Skip ----
+  // ---- break OFFER screen ----
   function renderOffer() {
     const mins = T.breakKind === "long" ? pomo.longBreakMinutes : pomo.shortBreakMinutes;
     view.innerHTML = `
       <div class="page-header" style="text-align:center;">
-        <div class="eyebrow">Session ${T.sessionsDone} done</div>
+        <div class="eyebrow">Session done</div>
         <h1>Take ${mins} minutes?</h1>
       </div>
-      <div class="break-banner">
-        <div class="focus-ring">
+      <div class="focus-v2">
+        <div class="focus-ring-v2">
           <div style="position:relative; text-align:center;">
-            <div class="focus-time num">${String(mins).padStart(2, "0")}:00</div>
-            <div class="focus-session-label">${T.breakKind === "long" ? "Long break earned" : "Short break"}</div>
+            <div class="focus-time-v2 num">${String(mins).padStart(2, "0")}:00</div>
+            <div class="focus-session-label-v2">${T.breakKind === "long" ? "Long break earned" : "Short break"}</div>
           </div>
         </div>
-        <p style="font-size:13px;color:var(--graphite);margin-bottom:var(--sp-5);">
-          Next up: ${T.taskTitle || "your next task"}
+        <p style="font-size:14px;color:var(--graphite);margin-bottom:var(--sp-5); text-align:center;">
+          Next up: ${escapeHtml(T.taskTitle || "your next task")}
         </p>
-        <div class="now-actions" style="justify-content:center;">
-          <button class="btn btn-primary" id="start-break-btn">Start Break</button>
+        <div class="focus-controls-v2">
+          <button class="btn btn-primary" id="start-break-btn">Start break</button>
           <button class="btn btn-secondary" id="skip-break-btn">Skip</button>
         </div>
       </div>
     `;
     view.querySelector("#start-break-btn").addEventListener("click", startBreak);
     view.querySelector("#skip-break-btn").addEventListener("click", () => skipToIdle("Skipped — jump back in anytime"));
+    paintRing();
   }
 
   // ---- active break ----
@@ -247,23 +266,24 @@ export async function renderFocus(view, alive = () => true) {
         <div class="eyebrow">${T.breakKind === "long" ? "Long break" : "Short break"} · in progress</div>
         <h1>Recharge</h1>
       </div>
-      <div class="break-banner">
-        <div class="focus-ring">
+      <div class="focus-v2">
+        <div class="focus-ring-v2">
           <div style="position:relative; text-align:center;">
-            <div class="focus-time num" id="timer-display">${secondsToClock(remainingSeconds())}</div>
-            <div class="focus-session-label">${T.plannedMinutes}m break</div>
+            <div class="focus-time-v2 num" id="timer-display">${secondsToClock(remainingSeconds())}</div>
+            <div class="focus-session-label-v2">${T.plannedMinutes}m break</div>
           </div>
         </div>
-        <div class="now-actions" style="justify-content:center;">
-          <button class="btn btn-secondary" id="break-pause-btn">${icon(T.running ? "pause" : "play")}<span>${T.running ? "Pause" : "Resume"}</span></button>
-          <button class="btn btn-primary" id="end-break-btn">End break</button>
+        <div class="focus-controls-v2">
+          <button class="icon-round-btn" id="break-pause-btn" aria-label="${T.running ? "Pause" : "Resume"}">${icon(T.running ? "pause" : "play")}</button>
+          <button class="focus-btn-main-v2 break" id="end-break-btn" aria-label="End break">${icon("check")}</button>
         </div>
+        <div class="focus-hint">End early to jump back into deep work.</div>
       </div>
     `;
     view.querySelector("#break-pause-btn").addEventListener("click", (e) => {
       if (T.running) pause();
       else arm(T.secondsLeft);
-      e.currentTarget.innerHTML = `${icon(T.running ? "pause" : "play")}<span>${T.running ? "Pause" : "Resume"}</span>`;
+      e.currentTarget.innerHTML = icon(T.running ? "pause" : "play");
     });
     view.querySelector("#end-break-btn").addEventListener("click", () => {
       stopTicker();
@@ -271,116 +291,214 @@ export async function renderFocus(view, alive = () => true) {
       T.endsAt = null;
       skipToIdle();
     });
+    updateDisplay();
   }
 
-  // ---- idle picker ----
-  function renderIdle(sessions) {
+  // ---- main screen (idle / running) ----
+  function statsRow(stats, weekSessions) {
+    return `
+      <div class="focus-stats-row">
+        <div class="focus-stat-card"><div class="focus-stat-icon">◷</div><div class="focus-stat-label">Today</div><div class="focus-stat-value num">${minutesToHuman(stats.todayMin)}</div></div>
+        <div class="focus-stat-card"><div class="focus-stat-icon">♨</div><div class="focus-stat-label">This week</div><div class="focus-stat-value num">${minutesToHuman(stats.weekMin)}</div></div>
+        <div class="focus-stat-card"><div class="focus-stat-icon">◴</div><div class="focus-stat-label">Sessions</div><div class="focus-stat-value num">${stats.weekSessions}</div></div>
+      </div>
+    `;
+  }
+
+  async function renderIdle(sessions) {
+    const { pruned } = await pruneOldSessions(sessions);
+    sessions = pruned;
+
+    const stats = await focusService.quickStats();
+    if (!alive()) return;
+
     const groups = groupSessions(sessions);
     view.innerHTML = `
-      <div class="page-header" style="text-align:center;">
+      <div class="page-header">
         <div class="eyebrow">Focus</div>
-        <h1>Deep work</h1>
+        <div class="page-title-row"><h1>Deep work</h1></div>
       </div>
-      <div class="focus-shell">
-        <div class="focus-task-label">Working on</div>
-        <div class="focus-task-title" id="task-title-display">${T.taskTitle || (tasks[0]?.title ?? "No open tasks")}</div>
+      <div class="focus-v2">
+        ${statsRow(stats)}
+        <div class="focus-mode-bar">
+          <div class="focus-mode-tabs" id="mode-tabs">
+            <button class="focus-mode-tab active" data-mode="focus">◎ Focus</button>
+            <button class="focus-mode-tab" data-mode="short">☕ Short break</button>
+            <button class="focus-mode-tab" data-mode="long">☕ Long break</button>
+          </div>
+          <button class="icon-round-btn" id="pomo-settings-btn" aria-label="Pomodoro settings">${icon("settings")}</button>
+        </div>
 
-        <div class="focus-ring">
+        <div class="focus-ring-v2">
           <div style="position:relative; text-align:center;">
-            <div class="focus-time num" id="timer-display">${secondsToClock(pomo.focusMinutes * 60)}</div>
-            <div class="focus-session-label">Ready</div>
+            <div class="focus-time-v2 num" id="timer-display">${secondsToClock(modeMinutes(mode) * 60)}</div>
+            <div class="focus-session-label-v2" id="session-label">Session ${Math.min(T.sessionsDone + 1, pomo.sessionsBeforeLongBreak)} of ${pomo.sessionsBeforeLongBreak}</div>
           </div>
         </div>
 
-        <div class="focus-controls">
-          <button class="btn btn-secondary btn-sm" id="pick-task-btn">${icon("tasks")} Choose task</button>
-          <button class="focus-btn-main" id="start-btn">${icon("play")}</button>
+        <div class="focus-task-chip" id="task-chip" role="button" tabindex="0" title="Choose task">
+          ${icon("tasks")} <span id="task-title-display">${escapeHtml(T.taskTitle || tasks[0]?.title || "Pick a task to focus on")}</span>
         </div>
 
-        <div class="eyebrow" style="margin-bottom:12px;">Duration</div>
-        <div class="focus-dur-row" id="dur-row">
-          <button class="dur-chip" data-min="25">25m</button>
-          <button class="dur-chip active" data-min="${pomo.focusMinutes}">${pomo.focusMinutes}m</button>
-          <button class="dur-chip" data-min="60">60m</button>
-          <button class="dur-chip" data-min="90">Deep (90m)</button>
-          <input type="number" min="5" max="180" step="5" class="custom-dur-input" placeholder="min" aria-label="Custom minutes" />
+        <div class="focus-controls-v2">
+          <button class="icon-round-btn" id="reset-btn" aria-label="Reset timer">${icon("x")}</button>
+          <button class="focus-btn-main-v2" id="start-btn" aria-label="Start">${icon("play")}</button>
+          <span style="width:48px;"></span>
         </div>
+
+        ${
+          mode === "focus"
+            ? `<div class="focus-dur-row" id="dur-row">
+                <button class="dur-chip" data-min="25">25m</button>
+                <button class="dur-chip ${pomo.focusMinutes === 45 ? "active" : ""}" data-min="${pomo.focusMinutes}">${pomo.focusMinutes}m</button>
+                <button class="dur-chip" data-min="50">50m</button>
+                <button class="dur-chip" data-min="90">90m</button>
+              </div>`
+            : ""
+        }
+        <div class="focus-hint">The timer keeps counting real time, even in a background tab.</div>
 
         ${historyHTML(groups)}
       </div>
     `;
     wireIdle();
-  }
+    wireHistory();
 
-  function groupSessions(sessions) {
-    const today = todayISO();
-    const dayOf = (s) => (s.startedAt || "").slice(0, 10);
-    const sorted = [...sessions].sort((a, b) => ((a.startedAt || "") < (b.startedAt || "") ? 1 : -1));
-    return {
-      today: sorted.filter((s) => dayOf(s) === today),
-      recent: sorted.filter((s) => {
-        const d = dayOf(s);
-        return d && d !== today && d >= addDaysISO(today, -6);
-      }),
-      older: sorted.filter((s) => {
-        const d = dayOf(s);
-        return d && d < addDaysISO(today, -6);
-      }),
-    };
-  }
-
-  function addDaysISO(iso, n) {
-    const d = new Date(`${iso}T00:00:00`);
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  }
-
-  function historyHTML(groups) {
-    if (!groups.today.length && !groups.recent.length && !groups.older.length) {
-      return `<section class="focus-history"><div class="empty-state" style="padding:var(--sp-6);"><h3>No sessions yet</h3><p>Pick a duration and press play.</p></div></section>`;
+    function modeMinutes(m) {
+      return m === "short" ? pomo.shortBreakMinutes : m === "long" ? pomo.longBreakMinutes : pomo.focusMinutes;
     }
-    const section = (title, list, open = true) =>
-      list.length
-        ? `
-        <details class="session-group" ${open ? "open" : ""}>
-          <summary>${title} <span class="num">${list.length}</span></summary>
-          <div class="session-group-body">${list.map(sessionRow).join("")}</div>
-        </details>`
-        : "";
-    return `
-      <section class="focus-history">
-        <div class="section-head"><h3>History</h3></div>
-        ${section("Today", groups.today)}
-        ${section("Last 7 days", groups.recent)}
-        ${section("Full history", groups.older.slice(0, 50), false)}
-      </section>
-    `;
+
+    function wireIdle() {
+      let selectedMode = "focus";
+
+      view.querySelectorAll(".focus-mode-tab").forEach((tab) =>
+        tab.addEventListener("click", () => {
+          selectedMode = tab.dataset.mode;
+          view.querySelectorAll(".focus-mode-tab").forEach((t) => t.classList.toggle("active", t === tab));
+          const disp = view.querySelector("#timer-display");
+          disp.textContent = secondsToClock(modeMinutes(selectedMode) * 60);
+          view.querySelector("#dur-row")?.classList.toggle("hidden-dur", selectedMode !== "focus");
+          paintRing();
+        })
+      );
+
+      view.querySelectorAll(".dur-chip").forEach((chip) =>
+        chip.addEventListener("click", () => {
+          view.querySelectorAll(".dur-chip").forEach((c) => c.classList.remove("active"));
+          chip.classList.add("active");
+          const disp = view.querySelector("#timer-display");
+          if (disp) disp.textContent = secondsToClock(Number(chip.dataset.min) * 60);
+        })
+      );
+
+      view.querySelector("#task-chip").addEventListener("click", pickTask);
+
+      view.querySelector("#start-btn").addEventListener("click", () => {
+        const disp = view.querySelector("#timer-display");
+        const mins = Math.round(secondsToClockToSecs(disp.textContent) / 60);
+        T.plannedMinutes = mins;
+        T.startedAt = new Date().toISOString();
+        if (selectedMode === "focus") {
+          if (!T.taskTitle) {
+            T.taskTitle = tasks[0]?.title || "";
+            T.taskId = tasks[0]?.id || null;
+          }
+          T.phase = "focus";
+        } else {
+          T.phase = "break";
+          T.breakKind = selectedMode;
+        }
+        T.totalSeconds = mins * 60;
+        arm(mins * 60);
+        draw();
+      });
+
+      view.querySelector("#reset-btn").addEventListener("click", () => {
+        const disp = view.querySelector("#timer-display");
+        disp.textContent = secondsToClock(modeMinutes(selectedMode) * 60);
+        paintRing();
+      });
+
+      view.querySelector("#pomo-settings-btn").addEventListener("click", openPomoSettings);
+    }
+
+    function secondsToClockToSecs(clock) {
+      const [m, s] = String(clock).split(":").map(Number);
+      return m * 60 + (s || 0);
+    }
+
+    async function pickTask() {
+      if (!tasks.length) {
+        toast("No open tasks — create one first");
+        return;
+      }
+      const res = await openForm({
+        title: "Choose a task",
+        eyebrow: "Focus target",
+        values: { taskId: T.taskId || tasks[0].id },
+        fields: [
+          {
+            name: "taskId",
+            label: "Open tasks (sorted by priority)",
+            type: "select",
+            options: tasks.slice(0, 25).map((t) => ({ value: t.id, label: `${t.title} · ${t.priority}` })),
+          },
+        ],
+        submitLabel: "Set task",
+      });
+      if (!res) return;
+      const t = tasks.find((x) => x.id === res.taskId);
+      T.taskId = t?.id || null;
+      T.taskTitle = t?.title || "";
+      const el = view.querySelector("#task-title-display");
+      if (el) el.textContent = T.taskTitle || "";
+      else view.querySelector("#task-chip span").textContent = T.taskTitle || "";
+    }
+
+    async function openPomoSettings() {
+      const res = await openForm({
+        title: "Pomodoro settings",
+        eyebrow: "Focus",
+        extraClass: "wide",
+        values: { ...pomo },
+        fields: [
+          { name: "focusMinutes", label: "Focus", type: "number", min: 5, max: 180, step: 1 },
+          { name: "shortBreakMinutes", label: "Short break", type: "number", min: 1, max: 30, step: 1 },
+          { name: "longBreakMinutes", label: "Long break", type: "number", min: 5, max: 60, step: 1 },
+          { name: "sessionsBeforeLongBreak", label: "Sessions per block", type: "number", min: 2, max: 10, step: 1 },
+        ],
+        submitLabel: "Save settings",
+      });
+      if (!res) return;
+      const merged = { ...pomo, ...res };
+      await saveSettings({ pomodoro: merged });
+      Object.assign(pomo, merged);
+      settings = { ...settings, pomodoro: merged };
+      toast("Pomodoro settings saved");
+      draw();
+    }
   }
 
-  // ---- running focus ----
   function renderRunning() {
     view.innerHTML = `
       <div class="page-header" style="text-align:center;">
-        <div class="eyebrow">Focus · session in progress</div>
+        <div class="eyebrow">${T.phase === "break" ? "Break" : "Focus"} · in progress</div>
         <h1>Deep work</h1>
       </div>
-      <div class="focus-shell">
-        <div class="focus-task-label">Working on</div>
-        <div class="focus-task-title">${T.taskTitle}</div>
-
-        <div class="focus-ring">
+      <div class="focus-v2">
+        <div class="focus-task-chip" style="cursor:default;">${icon("tasks")} <span>${escapeHtml(T.taskTitle || "Deep work")}</span></div>
+        <div class="focus-ring-v2">
           <div style="position:relative; text-align:center;">
-            <div class="focus-time num" id="timer-display">${secondsToClock(remainingSeconds())}</div>
-            <div class="focus-session-label">Pomodoro · ${T.plannedMinutes}m</div>
+            <div class="focus-time-v2 num" id="timer-display">${secondsToClock(remainingSeconds())}</div>
+            <div class="focus-session-label-v2">${T.phase === "break" ? `${T.plannedMinutes}m break` : `Pomodoro · ${T.plannedMinutes}m`}</div>
           </div>
         </div>
-
-        <div class="focus-controls">
+        <div class="focus-controls-v2">
           <button class="btn btn-secondary" id="abandon-btn">Abandon</button>
-          <button class="focus-btn-main" id="toggle-btn">${icon(T.running ? "pause" : "play")}</button>
+          <button class="focus-btn-main-v2" id="toggle-btn" aria-label="Pause / resume">${icon(T.running ? "pause" : "play")}</button>
           <button class="btn btn-primary" id="complete-btn">Complete</button>
         </div>
-        <p style="font-size:11.5px;color:var(--graphite-dim);">The timer keeps counting real time even in a background tab.</p>
+        <div class="focus-hint">The timer keeps counting real time even in a background tab.</div>
       </div>
     `;
     wireTimerControls();
@@ -392,94 +510,79 @@ export async function renderFocus(view, alive = () => true) {
     updateDisplay();
   }
 
+  // ---------- history: Today + this week ONLY ----------
+  async function pruneOldSessions(all) {
+    const weekStart = startOfWeekISO(todayISO());
+    const stale = all.filter((s) => (s.startedAt || "").slice(0, 10) < weekStart);
+    for (const s of stale) {
+      await db.del("focusSessions", s.id);
+    }
+    if (stale.length) console.info(`[focus] pruned ${stale.length} session(s) older than this week`);
+    return { pruned: all.filter((s) => (s.startedAt || "").slice(0, 10) >= weekStart) };
+  }
+
+  function groupSessions(sessions) {
+    const today = todayISO();
+    const dayOf = (s) => (s.startedAt || "").slice(0, 10);
+    const sorted = [...sessions].sort((a, b) => ((a.startedAt || "") < (b.startedAt || "") ? 1 : -1));
+    return {
+      today: sorted.filter((s) => dayOf(s) === today),
+      week: sorted.filter((s) => dayOf(s) !== today),
+    };
+  }
+
+  function historyHTML(groups) {
+    if (!groups.today.length && !groups.week.length) {
+      return `
+        <section class="focus-history">
+          <div class="section-head"><h3>Session history</h3></div>
+          <div class="empty-state" style="padding:var(--sp-6);"><h3>No sessions yet</h3><p>Press play to bank your first focused minutes.</p></div>
+        </section>`;
+    }
+    const section = (title, list, open) =>
+      list.length
+        ? `
+        <details class="session-group" ${open ? "open" : ""}>
+          <summary>${title} <span class="count num">${list.length}</span></summary>
+          <div class="session-group-body">${list.map(sessionRow).join("")}</div>
+        </details>`
+        : "";
+    return `
+      <section class="focus-history">
+        <div class="section-head"><h3>Session history</h3></div>
+        ${section("Today", groups.today, true)}
+        ${section("This week", groups.week, true)}
+      </section>
+    `;
+  }
+
   function sessionRow(s) {
     const d = new Date(s.startedAt);
-    const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const dateStr = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
     const timeStr = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    const dotClass = s.outcome === "completed" ? "completed" : s.outcome === "partial" ? "partial" : s.outcome;
     return `
       <div class="session-row">
-        <span class="session-date">${dateStr}<br /><small>${timeStr}</small></span>
-        <span class="session-title">${s.taskTitle}</span>
-        <span class="badge badge-${s.outcome === "completed" ? "good" : s.outcome === "partial" ? "warn" : "neutral"}">${s.outcome}</span>
-        <span class="session-mins">${Math.round((s.durationSeconds || 0) / 60)}m</span>
+        <span class="session-dot ${dotClass}"></span>
+        <div class="session-main">
+          <div class="session-title-v2">${escapeHtml(s.taskTitle || "Unassigned session")}</div>
+          <div class="session-sub-v2">${dateStr} · ${timeStr}${s.outcome !== "completed" ? ` · ${s.outcome}` : ""}</div>
+        </div>
+        <span class="session-mins-v2 num">${Math.round((s.durationSeconds || 0) / 60)}m</span>
         <button class="session-del" data-del="${s.id}" aria-label="Delete session">${icon("x")}</button>
       </div>
     `;
   }
 
-  function wireIdle() {
-    const display = view.querySelector("#timer-display");
-    let idleSeconds = pomo.focusMinutes * 60;
-    display.textContent = secondsToClock(idleSeconds);
-
-    view.querySelectorAll(".dur-chip").forEach((chip) =>
-      chip.addEventListener("click", () => {
-        view.querySelectorAll(".dur-chip").forEach((c) => c.classList.remove("active"));
-        chip.classList.add("active");
-        view.querySelector(".custom-dur-input").value = "";
-        idleSeconds = parseInt(chip.dataset.min, 10) * 60;
-        display.textContent = secondsToClock(idleSeconds);
-      })
-    );
-
-    view.querySelector(".custom-dur-input").addEventListener("input", (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (v >= 1 && v <= 180) {
-        view.querySelectorAll(".dur-chip").forEach((c) => c.classList.remove("active"));
-        idleSeconds = v * 60;
-        display.textContent = secondsToClock(idleSeconds);
-      }
-    });
-
-    view.querySelector("#start-btn").addEventListener("click", () => {
-      T.plannedMinutes = Math.round(idleSeconds / 60);
-      T.phase = "focus";
-      T.totalSeconds = idleSeconds;
-      T.startedAt = new Date().toISOString();
-      if (!T.taskTitle) {
-        T.taskTitle = tasks[0]?.title || "";
-        T.taskId = tasks[0]?.id || null;
-      }
-      arm(idleSeconds);
-      draw();
-    });
-
-    view.querySelector("#pick-task-btn").addEventListener("click", pickTask);
-
+  function wireHistory() {
     view.querySelectorAll("[data-del]").forEach((btn) =>
-      btn.addEventListener("click", async () => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
         await focusService.removeSession(btn.dataset.del);
         toast("Session removed");
         draw();
       })
     );
-  }
-
-  async function pickTask() {
-    if (!tasks.length) {
-      toast("No open tasks — create one first");
-      return;
-    }
-    const res = await openForm({
-      title: "Choose a task",
-      eyebrow: "Focus target",
-      values: { taskId: T.taskId || tasks[0].id },
-      fields: [
-        {
-          name: "taskId",
-          label: "Open tasks (sorted by priority)",
-          type: "select",
-          options: tasks.slice(0, 25).map((t) => ({ value: t.id, label: `${t.title} · ${t.priority}` })),
-        },
-      ],
-      submitLabel: "Set task",
-    });
-    if (!res) return;
-    const t = tasks.find((x) => x.id === res.taskId);
-    T.taskId = t?.id || null;
-    T.taskTitle = t?.title || "";
-    const el = view.querySelector("#task-title-display");
-    if (el) el.textContent = T.taskTitle;
   }
 
   function wireTimerControls() {
@@ -492,6 +595,7 @@ export async function renderFocus(view, alive = () => true) {
         updateToggle();
       }
     });
+    wireHistory();
   }
 
   // A running timer survives navigation: the old ticker's closure
@@ -501,5 +605,9 @@ export async function renderFocus(view, alive = () => true) {
     arm(T.secondsLeft);
   }
 
-  draw();
+  await draw();
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

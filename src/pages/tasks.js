@@ -24,6 +24,7 @@ const state = {
   dateRange: "all", // all | today | yesterday | week | month
   statusTab: "open", // open | completed | all
   projectId: "all", // all | none | <projectId>
+  goalId: "all", // all | none | <goalId>
   status: "all", // all | Todo | In Progress | Blocked | Completed | Cancelled
   priority: "all", // all | Urgent | High | Medium | Low
   sort: "priority", // priority | due | created | az | effort
@@ -137,6 +138,16 @@ export async function renderTasks(view, alive = () => true) {
     if (state.projectId === "none") list = list.filter((t) => !t.projectId);
     else if (state.projectId !== "all") list = list.filter((t) => t.projectId === state.projectId);
 
+    // Goal filter matches direct links AND tasks inside that goal's projects.
+    if (state.goalId !== "all") {
+      const projectIdsOfGoal = new Set(projects.filter((p) => p.goalId === state.goalId).map((p) => p.id));
+      list = list.filter((t) =>
+        state.goalId === "none"
+          ? !t.goalId && (!t.projectId || !projects.find((p) => p.id === t.projectId)?.goalId)
+          : t.goalId === state.goalId || (t.projectId && projectIdsOfGoal.has(t.projectId))
+      );
+    }
+
     if (state.status !== "all") list = list.filter((t) => t.status === state.status);
     if (state.priority !== "all") list = list.filter((t) => t.priority === state.priority);
 
@@ -185,6 +196,14 @@ export async function renderTasks(view, alive = () => true) {
             <option value="all" ${state.projectId === "all" ? "selected" : ""}>All projects</option>
             ${projects.map((p) => `<option value="${p.id}" ${state.projectId === p.id ? "selected" : ""}>${p.name}</option>`).join("")}
             <option value="none" ${state.projectId === "none" ? "selected" : ""}>No project</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Goal</label>
+          <select class="filter-select" id="filter-goal">
+            <option value="all" ${state.goalId === "all" ? "selected" : ""}>All goals</option>
+            ${goals.map((g) => `<option value="${g.id}" ${state.goalId === g.id ? "selected" : ""}>${g.title}</option>`).join("")}
+            <option value="none" ${state.goalId === "none" ? "selected" : ""}>No goal</option>
           </select>
         </div>
         <div class="filter-group">
@@ -250,6 +269,10 @@ export async function renderTasks(view, alive = () => true) {
     );
     view.querySelector("#filter-project").addEventListener("change", (e) => {
       state.projectId = e.target.value;
+      resetPage();
+    });
+    view.querySelector("#filter-goal").addEventListener("change", (e) => {
+      state.goalId = e.target.value;
       resetPage();
     });
     view.querySelector("#filter-status").addEventListener("change", (e) => {

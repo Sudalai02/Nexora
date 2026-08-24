@@ -1,10 +1,10 @@
 // ============================================================
-// NOTES — reading-first.
+// NOTES V2 — mobile reading-first.
 //
-// Notes open in a clean, read-only reading view. Editing is an
-// explicit action ("Edit" → autosaving form → "Done"). Extras:
-// full-screen reading mode, move-to-folder, and one-click PDF
-// export via the browser print pipeline.
+// · Folder rail scrolls horizontally, left → right
+// · LONG-PRESS a folder → action sheet: Rename / Save / Delete
+// · Tap a note → it opens directly as the page (nothing below)
+// · List rows stay light: title + date only
 // ============================================================
 
 import { icon } from "../dom.js";
@@ -12,14 +12,19 @@ import { openForm, openPanel, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
 import * as noteService from "../services/noteService.js";
 import * as taskService from "../services/taskService.js";
+import * as recycleService from "../services/recycleService.js";
 import * as aiService from "../ai/aiService.js";
 
 const state = {
   folderId: "all", // all | none | <folderId>
+  mode: "list", // list | reader | edit
   activeId: null,
-  editing: false, // notes open as read-only by default
-  q: "", // list filter text
+  q: "",
 };
+
+function esc(s) {
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 function debounce(fn, ms) {
   let t;
@@ -29,12 +34,12 @@ function debounce(fn, ms) {
   };
 }
 
-function esc(s) {
-  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function wordCount(text) {
+  const t = String(text || "").trim();
+  return t ? t.split(/\s+/).length : 0;
 }
 
-// Minimal markdown-ish renderer for pleasant reading: #/##/###
-// headings, -/* bullets, numbered lists, **bold**, *em*, `code`.
+// Minimal markdown-ish renderer: # headings, bullets, **bold**, *em*, `code`.
 function mdLite(raw) {
   const lines = String(raw || "").split("\n");
   const out = [];
@@ -86,149 +91,147 @@ function mdLite(raw) {
   return out.join("");
 }
 
-function wordCount(text) {
-  const t = String(text || "").trim();
-  return t ? t.split(/\s+/).length : 0;
+function fmtNoteDate(iso) {
+  if (!iso) return "";
+  return iso.slice(0, 10);
 }
 
 export async function renderNotes(view, alive = () => true) {
   const [folders, notes] = await Promise.all([noteService.allFolders(), noteService.allNotes()]);
   if (!alive()) return;
 
-  if (!state.activeId && notes.length) state.activeId = notes[0].id;
-  // Notes always re-open in reading mode after navigation.
-  state.editing = false;
+  // After navigation always come back to the list.
+  if (state.mode === "edit") state.mode = state.activeId ? "reader" : "list";
+  if (state.activeId && !notes.find((n) => n.id === state.activeId)) {
+    state.activeId = null;
+    state.mode = "list";
+  }
 
   const matchesFolder = (n) =>
-    state.folderId === "all" ||
-    (state.folderId === "none" ? !n.folderId : n.folderId === state.folderId);
-
+    state.folderId === "all" || (state.folderId === "none" ? !n.folderId : n.folderId === state.folderId);
   const matchesQuery = (n) =>
-    !state.q ||
-    (n.title || "").toLowerCase().includes(state.q) ||
-    (n.body || "").toLowerCase().includes(state.q);
+    !state.q || (n.title || "").toLowerCase().includes(state.q) || (n.body || "").toLowerCase().includes(state.q);
 
   function draw() {
-    const visible = notes.filter((n) => matchesFolder(n) && matchesQuery(n));
-    if (state.activeId && !notes.find((n) => n.id === state.activeId)) state.activeId = null;
     const active = notes.find((n) => n.id === state.activeId) || null;
+
+    if (state.mode !== "list" && active) {
+      view.innerHTML = state.mode === "edit" ? editorHTML(active) : readerHTML(active);
+      wireReader(active);
+      return;
+    }
+
+    const visible = notes.filter((n) => matchesFolder(n) && matchesQuery(n));
 
     view.innerHTML = `
       <div class="page-header">
         <div class="eyebrow">${notes.length} notes · ${folders.length} folders</div>
         <div class="page-title-row">
           <h1>Notes</h1>
-          <button class="btn btn-primary btn-sm only-desktop" id="new-note-btn">${icon("plus")} New note</button>
+          <button class="btn btn-primary btn-sm" id="new-note-btn">${icon("plus")} New note</button>
         </div>
-        <div class="sub">Your second brain — organized in folders, comfortable to read.</div>
+        <div class="sub">Your second brain.</div>
       </div>
 
-      <div class="notes-layout-v2">
-        <!-- FOLDER RAIL -->
-        <aside class="folder-rail">
-          <div class="rail-head">Folders
-            <button id="add-folder-btn" aria-label="New folder">${icon("plus")}</button>
-          </div>
-          <button class="folder-item ${state.folderId === "all" ? "active" : ""}" data-folder="all">
-            <span class="fi-label">${icon("notes")} All notes</span>
-          </button>
-          <button class="folder-item ${state.folderId === "none" ? "active" : ""}" data-folder="none">
-            <span class="fi-label">${icon("inbox")} Unfiled</span>
-          </button>
-          ${folders
-            .map(
-              (f) => `
-            <button class="folder-item ${state.folderId === f.id ? "active" : ""}" data-folder="${f.id}">
-              <span class="fi-label">${icon("projects")} ${f.name}</span>
-              <span class="fi-actions">
-                <button data-rename="${f.id}" aria-label="Rename folder">${icon("settings")}</button>
-                <button data-delfolder="${f.id}" aria-label="Delete folder">${icon("x")}</button>
-              </span>
-            </button>`
-            )
-            .join("")}
-        </aside>
+      <!-- HORIZONTAL FOLDER RAIL -->
+      <div class="folder-rail" id="folder-rail">
+        <button class="folder-item ${state.folderId === "all" ? "active" : ""}" data-folder="all">
+          <span class="fi-label">📚 All notes</span><span class="fi-count num">${notes.length}</span>
+        </button>
+        <button class="folder-item ${state.folderId === "none" ? "active" : ""}" data-folder="none">
+          <span class="fi-label">📥 Unfiled</span><span class="fi-count num">${notes.filter((n) => !n.folderId).length}</span>
+        </button>
+        ${folders
+          .map(
+            (f) => `
+          <button class="folder-item ${state.folderId === f.id ? "active" : ""}" data-folder="${f.id}" data-longpress-folder="${f.id}">
+            <span class="fi-label">📁 ${esc(f.name)}</span><span class="fi-count num">${notes.filter((n) => n.folderId === f.id).length}</span>
+          </button>`
+          )
+          .join("")}
+        <button class="folder-item folder-add" id="add-folder-btn" title="New folder">
+          <span class="fi-label">${icon("plus")} New folder</span>
+        </button>
+      </div>
 
-        <!-- NOTE LIST -->
-        <div>
-          <input type="text" class="note-search" id="note-search" placeholder="Search notes…" value="${esc(state.q)}" />
-          <div class="note-list-scroll" id="note-list">
-            ${visible.length
-              ? visible
-                  .map(
-                    (n) => `
-              <div class="note-list-item ${n.id === state.activeId ? "active" : ""}" data-note="${n.id}" role="button" tabindex="0">
-                <div class="note-item-title">${esc(n.title || "Untitled")}</div>
-                <div class="note-item-preview">${esc((n.body || "").slice(0, 60).replace(/\n/g, " "))}</div>
-                <div class="note-item-date">${(n.updatedAt || "").slice(0, 10)}</div>
-              </div>`
-                  )
-                  .join("")
-              : `<div class="empty-state"><h3>No notes here</h3><p>Create one to start thinking.</p></div>`}
-          </div>
-        </div>
+      <input type="text" class="note-search" id="note-search" placeholder="🔍 Search notes…" value="${esc(state.q)}" />
 
-        <!-- READER / EDITOR PANE -->
-        <div class="card note-editor-v2">${editorHTML(active)}</div>
+      <!-- NOTE LIST: title + date only -->
+      <div class="note-list-v2" id="note-list">
+        ${
+          visible.length
+            ? visible
+                .map(
+                  (n) => `
+          <div class="note-row" data-note="${n.id}" role="button" tabindex="0">
+            <div class="note-row-main">
+              <div class="note-row-title">${esc(n.title || "Untitled")}</div>
+            </div>
+            <div class="note-row-date num">${fmtNoteDate(n.updatedAt)}</div>
+          </div>`
+                )
+                .join("")
+            : `<div class="empty-state"><h3>No notes here yet</h3><p>Create one to start thinking.</p></div>`
+        }
       </div>
     `;
-    wire(visible, active);
+    wireList(visible);
   }
 
-  function editorHTML(active) {
-    if (!active) return `<div class="empty-state" style="margin:auto;"><h3>No note selected</h3><p>Pick a note or create a new one.</p></div>`;
-    const folderName = folders.find((f) => f.id === active.folderId)?.name || "Unfiled";
-
-    if (!state.editing) {
-      return `
-        <div class="note-toolbar">
-          <button class="btn btn-secondary btn-sm" id="edit-note-btn">Edit</button>
-          <button class="btn btn-ghost btn-sm" id="fullscreen-btn" title="Full-screen reading">${icon("focus")} Read</button>
-          <button class="btn btn-ghost btn-sm" id="move-note-btn" title="Move to folder">${icon("inbox")} Move</button>
-          <button class="btn btn-ghost btn-sm" id="pdf-btn" title="Export as PDF">${icon("notes")} PDF</button>
-          <span style="flex:1"></span>
-          <button class="btn btn-danger btn-sm" id="delete-note-btn">Delete</button>
+  // ---------- READER ----------
+  function readerHTML(a) {
+    const folderName = folders.find((f) => f.id === a.folderId)?.name || "Unfiled";
+    return `
+      <div class="note-reader-page">
+        <div class="reader-topbar">
+          <button class="icon-btn" id="back-btn" aria-label="Back">${icon("arrow-left")}</button>
+          <div class="reader-actions">
+            <button class="icon-btn" id="move-note-btn" title="Move to folder" aria-label="Move">${icon("inbox")}</button>
+            <button class="icon-btn" id="pdf-btn" title="Export PDF" aria-label="PDF">${icon("notes")}</button>
+            <button class="icon-btn" id="delete-note-btn" title="Delete" aria-label="Delete">${icon("x")}</button>
+            <button class="btn btn-primary btn-sm" id="edit-note-btn">Edit</button>
+          </div>
         </div>
         <article class="note-reader">
-          <h1 class="reader-title">${esc(active.title || "Untitled note")}</h1>
+          <h1 class="reader-title">${esc(a.title || "Untitled note")}</h1>
           <div class="note-meta-row">
-            <span>Edited ${(active.updatedAt || "").slice(0, 10)}</span>
+            <span>${fmtNoteDate(a.updatedAt)}</span>
             <span class="tag">${folderName}</span>
-            <span>${wordCount(active.body)} words</span>
+            <span>${wordCount(a.body)} words</span>
           </div>
-          <div class="note-reader-body">${mdLite(active.body) || `<p style="color:var(--graphite-dim)">This note is empty — press Edit to start writing.</p>`}</div>
+          <div class="note-reader-body big">${mdLite(a.body) || `<p style="color:var(--graphite-dim)">This note is empty — press Edit to start writing.</p>`}</div>
         </article>
         <div class="ai-note-actions">
           <button class="btn btn-secondary btn-sm" data-ai="summarize">${icon("spark")} Summarize</button>
           <button class="btn btn-secondary btn-sm" data-ai="extract">${icon("check")} Extract tasks</button>
         </div>
-      `;
-    }
-
-    return `
-      <div class="note-toolbar">
-        <button class="btn btn-primary btn-sm" id="done-editing-btn">Done</button>
-        <span class="tag">Editing · saves automatically</span>
-        <span style="flex:1"></span>
-        <button class="btn btn-danger btn-sm" id="delete-note-btn">Delete</button>
-      </div>
-      <input type="text" class="note-title-input" id="note-title-input" value="${esc(active.title)}" placeholder="Title" />
-      <textarea class="note-textarea" id="note-body-input" placeholder="Write anything — there is no limit…">${esc(active.body)}</textarea>
-      <div class="word-count" id="word-count"></div>
-      <div class="ai-note-actions">
-        <button class="btn btn-secondary btn-sm" data-ai="summarize">${icon("spark")} Summarize</button>
-        <button class="btn btn-secondary btn-sm" data-ai="extract">${icon("check")} Extract tasks</button>
       </div>
     `;
   }
 
-  async function saveActive(active, patch) {
-    await noteService.updateNote(active.id, patch);
-    Object.assign(active, { ...patch }, { updatedAt: new Date().toISOString() });
-    draw();
+  // ---------- EDITOR ----------
+  function editorHTML(a) {
+    return `
+      <div class="note-editor-page card">
+        <div class="reader-topbar">
+          <button class="icon-btn" id="back-edit-btn" aria-label="Back">${icon("arrow-left")}</button>
+          <span class="tag">Editing · saves automatically</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-primary btn-sm" id="done-editing-btn">Done</button>
+        </div>
+        <input type="text" class="note-title-input" id="note-title-input" value="${esc(a.title)}" placeholder="Title" />
+        <textarea class="note-textarea" id="note-body-input" placeholder="Write anything — there is no limit…">${esc(a.body)}</textarea>
+        <div class="word-count" id="word-count"></div>
+        <div class="ai-note-actions">
+          <button class="btn btn-secondary btn-sm" data-ai="summarize">${icon("spark")} Summarize</button>
+          <button class="btn btn-secondary btn-sm" data-ai="extract">${icon("check")} Extract tasks</button>
+        </div>
+      </div>
+    `;
   }
 
-  function wire(visible, active) {
+  // ---------- LIST WIRING ----------
+  function wireList(visible) {
     view.querySelector("#new-note-btn").addEventListener("click", async () => {
       const created = await noteService.createNote({
         folderId: ["all", "none"].includes(state.folderId) ? null : state.folderId,
@@ -237,20 +240,19 @@ export async function renderNotes(view, alive = () => true) {
       });
       notes.unshift(created);
       state.activeId = created.id;
-      state.editing = true; // brand-new note goes straight into the editor
+      state.mode = "edit"; // brand-new note goes straight into editing
       toast("Note created");
       draw();
       setTimeout(() => view.querySelector("#note-title-input")?.focus(), 40);
     });
 
-    // Folder rail
-    view.querySelectorAll(".folder-item[data-folder]").forEach((item) =>
+    view.querySelectorAll(".folder-item[data-folder]").forEach((item) => {
       item.addEventListener("click", () => {
         state.folderId = item.dataset.folder;
-        state.activeId = null;
         draw();
-      })
-    );
+      });
+      if (item.dataset.longpressFolder) attachLongPress(item, item.dataset.longpressFolder);
+    });
 
     view.querySelector("#add-folder-btn").addEventListener("click", async () => {
       const res = await openForm({
@@ -265,46 +267,11 @@ export async function renderNotes(view, alive = () => true) {
       draw();
     });
 
-    view.querySelectorAll("[data-rename]").forEach((btn) =>
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const f = folders.find((x) => x.id === btn.dataset.rename);
-        const res = await openForm({
-          title: "Rename folder",
-          fields: [{ name: "name", label: "Folder name", required: true, value: f.name }],
-        });
-        if (!res?.name) return;
-        await noteService.renameFolder(f.id, res.name);
-        f.name = res.name;
-        toast("Folder renamed");
-        draw();
-      })
-    );
-
-    view.querySelectorAll("[data-delfolder]").forEach((btn) =>
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const f = folders.find((x) => x.id === btn.dataset.delfolder);
-        const ok = await confirmModal({
-          title: "Delete folder?",
-          message: `“${f.name}” moves to the Recycle Bin for 15 days. Its notes become Unfiled.`,
-          confirmLabel: "Delete",
-          danger: true,
-        });
-        if (!ok) return;
-        await noteService.removeFolder(f.id);
-        folders.splice(folders.indexOf(f), 1);
-        if (state.folderId === f.id) state.folderId = "all";
-        toast("Moved to Recycle Bin");
-        draw();
-      })
-    );
-
-    // Note list selection + live search filter
-    view.querySelectorAll("[data-note]").forEach((item) =>
-      item.addEventListener("click", () => {
-        state.activeId = item.dataset.note;
-        state.editing = false;
+    view.querySelectorAll("[data-note]").forEach((row) =>
+      row.addEventListener("click", () => {
+        state.activeId = row.dataset.note;
+        state.mode = "reader"; // tap → note IS the page now
+        window.scrollTo({ top: 0 });
         draw();
       })
     );
@@ -316,62 +283,116 @@ export async function renderNotes(view, alive = () => true) {
         el.style.display = filtered.some((n) => n.id === el.dataset.note) ? "" : "none";
       });
     });
+  }
 
-    if (!active) return;
-
-    // ---- delete (recycle bin) ----
-    view.querySelector("#delete-note-btn").addEventListener("click", async () => {
-      if (state.editing) {
-        const titleEl = view.querySelector("#note-title-input");
-        const bodyEl = view.querySelector("#note-body-input");
-        if (titleEl && bodyEl) {
-          const patch = { title: titleEl.value.trim() || "Untitled note", body: bodyEl.value };
-          await noteService.updateNote(active.id, patch);
-          Object.assign(active, patch, { updatedAt: new Date().toISOString() });
+  // ---------- LONG-PRESS → folder action sheet ----------
+  function attachLongPress(el, folderId) {
+    let timer = null;
+    let fired = false;
+    const start = () => {
+      fired = false;
+      timer = setTimeout(() => {
+        fired = true;
+        navigator.vibrate?.(15);
+        folderActions(folderId);
+      }, 500);
+    };
+    const cancel = () => timer && clearTimeout(timer);
+    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchend", cancel);
+    el.addEventListener("touchmove", cancel);
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      folderActions(folderId);
+    });
+    // Suppress the click that follows a long-press.
+    el.addEventListener(
+      "click",
+      (e) => {
+        if (fired) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
         }
-      }
+      },
+      true
+    );
+  }
+
+  async function folderActions(folderId) {
+    const f = folders.find((x) => x.id === folderId);
+    if (!f) return;
+    const res = await openPanel({
+      title: f.name,
+      eyebrow: `📁 Folder · ${notes.filter((n) => n.folderId === f.id).length} notes`,
+      actions: [
+        { id: "rename", label: "✏️ Rename folder", class: "btn-secondary" },
+        { id: "save", label: "💾 Save (export all notes)", class: "btn-secondary" },
+        { id: "delete", label: "🗑️ Delete folder", class: "btn-danger" },
+      ],
+    });
+    if (!res) return;
+
+    if (res.action === "rename") {
+      const r = await openForm({
+        title: "Rename folder",
+        fields: [{ name: "name", label: "Folder name", required: true, value: f.name }],
+      });
+      if (!r?.name) return;
+      await noteService.renameFolder(f.id, r.name);
+      f.name = r.name;
+      toast("Folder renamed");
+    } else if (res.action === "save") {
+      exportFolder(f);
+    } else if (res.action === "delete") {
       const ok = await confirmModal({
-        title: "Delete note?",
-        message: `“${active.title}” moves to the Recycle Bin and can be restored for 15 days.`,
+        title: "Delete folder?",
+        message: `“${f.name}” moves to the Recycle Bin for 15 days. Its notes become Unfiled.`,
         confirmLabel: "Delete",
         danger: true,
       });
       if (!ok) return;
-      await noteService.removeNote(active.id);
-      notes.splice(notes.findIndex((n) => n.id === active.id), 1);
-      state.activeId = null;
+      await noteService.removeFolder(f.id);
+      folders.splice(folders.indexOf(f), 1);
+      if (state.folderId === f.id) state.folderId = "all";
       toast("Moved to Recycle Bin");
-      draw();
-    });
-
-    // ---- AI actions (available in both modes) ----
-    view.querySelectorAll("[data-soon]").forEach((b) =>
-      b.addEventListener("click", () => toast("Find-related arrives with the embeddings phase"))
-    );
-    view.querySelector('[data-ai="summarize"]').addEventListener("click", () => summarizeFlow(active));
-    view.querySelector('[data-ai="extract"]').addEventListener("click", () => extractFlow(active));
-
-    if (state.editing) wireEditing(active);
-    else wireReading(active);
-
-    function wireReading(a) {
-      view.querySelector("#edit-note-btn").addEventListener("click", () => {
-        state.editing = true;
-        draw();
-        setTimeout(() => view.querySelector("#note-title-input")?.focus(), 40);
-      });
-      view.querySelector("#fullscreen-btn").addEventListener("click", () => openReaderOverlay(a));
-      view.querySelector("#move-note-btn").addEventListener("click", () => moveFlow(a));
-      view.querySelector("#pdf-btn").addEventListener("click", () => exportPDF(a));
     }
+    draw();
+  }
 
-    function wireEditing(a) {
+  async function exportFolder(f) {
+    const inFolder = notes.filter((n) => n.folderId === f.id);
+    if (!inFolder.length) {
+      toast("This folder is empty");
+      return;
+    }
+    const md = inFolder.map((n) => `# ${n.title || "Untitled"}\n\n${n.body}`).join("\n\n---\n\n");
+    download(`${f.name.replace(/[^\w-]+/g, "_")}.md`, md, "text/markdown");
+    toast(`Exported ${inFolder.length} note${inFolder.length > 1 ? "s" : ""}`);
+  }
+
+  function download(filename, text, mime) {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- READER / EDITOR WIRING ----------
+  function wireReader(active) {
+    const backToList = () => {
+      state.mode = "list";
+      state.activeId = null;
+      draw();
+    };
+
+    if (state.mode === "edit") {
       const bodyEl = view.querySelector("#note-body-input");
       const countEl = view.querySelector("#word-count");
-
-      function updateCount() {
-        countEl.textContent = `${wordCount(bodyEl.value)} words · ${bodyEl.value.length} chars`;
-      }
+      const updateCount = () =>
+        (countEl.textContent = `${wordCount(bodyEl.value)} words · ${bodyEl.value.length} chars`);
       updateCount();
 
       const persist = debounce(async () => {
@@ -379,14 +400,8 @@ export async function renderNotes(view, alive = () => true) {
           title: view.querySelector("#note-title-input").value.trim() || "Untitled note",
           body: bodyEl.value,
         };
-        await noteService.updateNote(a.id, patch);
-        Object.assign(a, patch, { updatedAt: new Date().toISOString() });
-        const row = view.querySelector(`[data-note="${a.id}"]`);
-        if (row) {
-          row.querySelector(".note-item-title").textContent = a.title;
-          row.querySelector(".note-item-preview").textContent = a.body.slice(0, 60).replace(/\n/g, " ");
-          row.querySelector(".note-item-date").textContent = a.updatedAt.slice(0, 10);
-        }
+        await noteService.updateNote(active.id, patch);
+        Object.assign(active, patch, { updatedAt: new Date().toISOString() });
       }, 450);
 
       bodyEl.addEventListener("input", () => {
@@ -396,10 +411,50 @@ export async function renderNotes(view, alive = () => true) {
       view.querySelector("#note-title-input").addEventListener("input", persist);
 
       view.querySelector("#done-editing-btn").addEventListener("click", () => {
-        state.editing = false;
+        state.mode = "reader";
         draw();
       });
+      view.querySelector("#back-edit-btn").addEventListener("click", () => {
+        state.mode = "reader";
+        draw();
+      });
+      wireAI(active);
+      return;
     }
+
+    // ---- reader mode ----
+    view.querySelector("#back-btn").addEventListener("click", backToList);
+
+    view.querySelector("#edit-note-btn").addEventListener("click", () => {
+      state.mode = "edit";
+      draw();
+      setTimeout(() => view.querySelector("#note-title-input")?.focus(), 40);
+    });
+
+    view.querySelector("#move-note-btn").addEventListener("click", () => moveFlow(active));
+
+    view.querySelector("#pdf-btn").addEventListener("click", () => exportPDF(active));
+
+    view.querySelector("#delete-note-btn").addEventListener("click", async () => {
+      const ok = await confirmModal({
+        title: "Delete note?",
+        message: `“${active.title}” moves to the Recycle Bin and can be restored for 15 days.`,
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
+      await recycleService.softDelete("notes", active.id);
+      notes.splice(notes.findIndex((n) => n.id === active.id), 1);
+      backToList();
+      toast("Moved to Recycle Bin");
+    });
+
+    wireAI(active);
+  }
+
+  function wireAI(active) {
+    view.querySelector('[data-ai="summarize"]')?.addEventListener("click", () => summarizeFlow(active));
+    view.querySelector('[data-ai="extract"]')?.addEventListener("click", () => extractFlow(active));
   }
 
   // ---------- move to folder ----------
@@ -425,52 +480,7 @@ export async function renderNotes(view, alive = () => true) {
     draw();
   }
 
-  // ---------- full-screen reader overlay ----------
-  function openReaderOverlay(a) {
-    const ov = document.createElement("div");
-    ov.className = "reader-overlay";
-    ov.innerHTML = `
-      <div class="reader-topbar">
-        <span class="eyebrow">Reading mode · Esc closes</span>
-        <div class="reader-actions">
-          <button class="btn btn-ghost btn-sm" id="ro-pdf">${icon("notes")} Export PDF</button>
-          <button class="btn btn-secondary btn-sm" id="ro-edit">Edit</button>
-          <button class="icon-btn" id="ro-close" aria-label="Close">${icon("x")}</button>
-        </div>
-      </div>
-      <article class="reader-article">
-        <h1 class="reader-title">${esc(a.title || "Untitled note")}</h1>
-        <div class="note-meta-row">
-          <span>Edited ${(a.updatedAt || "").slice(0, 10)}</span>
-          <span class="tag">${folders.find((f) => f.id === a.folderId)?.name || "Unfiled"}</span>
-          <span>${wordCount(a.body)} words</span>
-        </div>
-        <div class="note-reader-body big">${mdLite(a.body)}</div>
-      </article>
-    `;
-    document.body.appendChild(ov);
-    document.body.style.overflow = "hidden";
-    requestAnimationFrame(() => ov.classList.add("open"));
-
-    const close = () => {
-      ov.classList.remove("open");
-      setTimeout(() => ov.remove(), 170);
-      document.body.style.overflow = "";
-      document.removeEventListener("keydown", onKey);
-    };
-    const onKey = (e) => e.key === "Escape" && close();
-    document.addEventListener("keydown", onKey);
-    ov.querySelector("#ro-close").addEventListener("click", close);
-    ov.querySelector("#ro-pdf").addEventListener("click", () => exportPDF(a));
-    ov.querySelector("#ro-edit").addEventListener("click", () => {
-      state.editing = true;
-      close();
-      draw();
-      setTimeout(() => view.querySelector("#note-title-input")?.focus(), 40);
-    });
-  }
-
-  // ---------- PDF export (browser print pipeline) ----------
+  // ---------- PDF export ----------
   function exportPDF(a) {
     const w = window.open("", "_blank", "width=820,height=940");
     if (!w) {
@@ -508,26 +518,22 @@ ${mdLite(a.body)}
     const res = await openPanel({
       title: "Summary",
       eyebrow: `${icon("spark")} ${engine === "ollama" ? "Local AI" : "Smart rules"}`,
-      bodyHTML: `<div class="ai-result-text">${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br/>")}</div>`,
+      bodyHTML: `<div class="ai-result-text">${esc(text).replace(/\n/g, "<br/>")}</div>`,
       actions: [
         { id: "append", label: "Append to note", class: "btn-primary" },
         { id: "newnote", label: "Save as new note", class: "btn-secondary" },
       ],
     });
     if (res?.action === "append") {
-      const bodyEl = view.querySelector("#note-body-input");
-      if (bodyEl && state.editing && state.activeId === a.id) {
-        bodyEl.value += `${bodyEl.value.trim() ? "\n\n" : ""}— Summary —\n${text}`;
-        bodyEl.dispatchEvent(new Event("input"));
-      } else {
-        await saveActive(a, { body: `${a.body.trim() ? `${a.body}\n\n` : ""}— Summary —\n${text}` });
-      }
+      await noteService.updateNote(a.id, { body: `${(a.body || "").trim() ? `${a.body}\n\n` : ""}— Summary —\n${text}` });
+      a.body = `${a.body.trim() ? `${a.body}\n\n` : ""}— Summary —\n${text}`;
       toast("Summary appended");
+      if (state.mode !== "list") draw();
     } else if (res?.action === "newnote") {
       const created = await noteService.createNote({ title: `Summary — ${a.title}`, body: text, folderId: a.folderId });
       notes.unshift(created);
       state.activeId = created.id;
-      state.editing = false;
+      state.mode = "reader";
       toast("Saved as new note");
       draw();
     }
@@ -548,7 +554,7 @@ ${mdLite(a.body)}
           .map(
             (t) => `
           <label class="pp-task">
-            <input type="checkbox" checked data-x-task="${t.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}" />
+            <input type="checkbox" checked data-x-task="${esc(t).replace(/"/g, "&quot;")}" />
             <span>${esc(t)}</span>
           </label>`
           )

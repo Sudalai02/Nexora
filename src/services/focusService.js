@@ -1,5 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
+import { emit } from "../utils/bus.js";
+import { todayISO, startOfWeekISO } from "../utils/dates.js";
 import * as recycle from "./recycleService.js";
 
 export async function allSessions() {
@@ -10,6 +12,7 @@ export async function allSessions() {
 export async function saveSession(session) {
   const record = { id: uid("fs"), ...session };
   await db.put("focusSessions", record);
+  emit("data-changed", { entity: "focusSessions" });
   return record;
 }
 
@@ -20,7 +23,9 @@ export async function updateSession(id, patch) {
 }
 
 export async function removeSession(id) {
-  return recycle.softDelete("focusSessions", id);
+  const entry = await recycle.softDelete("focusSessions", id);
+  emit("data-changed", { entity: "focusSessions" });
+  return entry;
 }
 
 export function minutesInRange(sessions, startISO, endISO) {
@@ -35,4 +40,27 @@ export function minutesInRange(sessions, startISO, endISO) {
     }
   }
   return { focus, deep };
+}
+
+// Headline stats for the Focus screen cards: today, this week, sessions.
+export async function quickStats() {
+  const today = todayISO();
+  const weekStart = startOfWeekISO(today);
+  let todayMin = 0;
+  let weekMin = 0;
+  let weekSessions = 0;
+  let todaySessions = 0;
+  for (const s of await db.getAll("focusSessions")) {
+    if (s.type !== "focus") continue;
+    const day = (s.startedAt || "").slice(0, 10);
+    if (day === today) {
+      todayMin += Math.round((s.durationSeconds || 0) / 60);
+      todaySessions += 1;
+    }
+    if (day >= weekStart && day <= today) {
+      weekMin += Math.round((s.durationSeconds || 0) / 60);
+      weekSessions += 1;
+    }
+  }
+  return { todayMin, weekMin, todaySessions, weekSessions };
 }

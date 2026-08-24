@@ -1,281 +1,426 @@
 // ============================================================
-// INSIGHTS — six analytical modules, every number real.
-//
-// 01 Velocity       tasks completed per day/period + trend vs
-//                   the previous equal-length window
-// 02 Focus quality  total focus time, deep-work share, sessions
-// 03 Best hours     focus minutes per start-hour heat strip
-// 04 Reliability    completion rate of due tasks + estimate accuracy
-// 05 Habits         consistency % per scheduled habit
-// 06 Backlog & risk open load by priority, overdue count,
-//                   goals/projects approaching target dates
+// INSIGHTS V2 — every number is computed from your real data.
+// Six modules: Overview · Tasks · Goals & Projects · Focus &
+// Time · Habits · AI Personal Insights. No fake stats, ever.
 // ============================================================
 
 import { icon } from "../dom.js";
-import { rangeStats, bestWindow, habitConsistency } from "../services/analyticsService.js";
-import { minutesToHuman, todayISO, addDays, diffDays } from "../utils/dates.js";
+import * as analytics from "../services/analyticsService.js";
+import * as taskService from "../services/taskService.js";
 import * as goalService from "../services/goalService.js";
 import * as projectService from "../services/projectService.js";
-import * as taskService from "../services/taskService.js";
+import { minutesToHuman, todayISO, fmtDateLong } from "../utils/dates.js";
 
-const state = { range: 7 };
+const state = { days: 7 };
 
-const RANGES = [
-  { days: 7, label: "Week" },
-  { days: 14, label: "14d" },
-  { days: 30, label: "30d" },
-  { days: 90, label: "90d" },
-];
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 
-function bucketSeries(perDay, days) {
-  if (days <= 14) return perDay.map((d) => ({ label: d.date.slice(8), value: d.completed }));
-  const out = [];
-  const size = days === 30 ? 5 : 7;
-  for (let i = 0; i < perDay.length; i += size) {
-    const chunk = perDay.slice(i, i + size);
-    out.push({
-      label: chunk[0].date.slice(5),
-      value: chunk.reduce((a, d) => a + d.completed, 0),
-    });
+function pct(n, d) {
+  return d > 0 ? Math.round((n / d) * 100) : null;
+}
+
+function trend(cur, prev) {
+  if (prev == null || prev === 0) return cur > 0 ? { dir: "up", txt: `+${cur}` } : { dir: "", txt: "" };
+  const diff = cur - prev;
+  if (diff === 0) return { dir: "flat", txt: "=" };
+  return diff > 0 ? { dir: "up", txt: `+${diff}` } : { dir: "down", txt: `${diff}` };
+}
+
+// ---------- productivity score ----------
+// Weighted blend of: task completion (35), focus volume (25),
+// habit consistency (20), overdue discipline (10), momentum (10).
+function computeScore({ week, prevWeek, habitsCons, overdueCount }) {
+  const focusTarget = Math.max(week.days * 45, 60); // ~45 min/day goal
+  const parts = {
+    tasks: week.completionRate != null ? week.completionRate : week.tasksCompleted > 0 ? 100 : null,
+    focus: pct(week.focusMinutes, focusTarget),
+    habits: habitsCons.length
+      ? Math.round(habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length)
+      : null,
+    overdue:
+      overdueCount === 0
+        ? 100
+        : Math.max(0, 100 - overdueCount * 15),
+    momentum: (() => {
+      if (!prevWeek.tasksCompleted && !week.tasksCompleted) return null;
+      const base = Math.max(prevWeek.tasksCompleted, 1);
+      return Math.min(100, Math.round((week.tasksCompleted / base) * 100));
+    })(),
+  };
+
+  const weights = { tasks: 35, focus: 25, habits: 20, overdue: 10, momentum: 10 };
+  let total = 0;
+  let weight = 0;
+  for (const k of Object.keys(weights)) {
+    if (parts[k] == null) continue;
+    total += parts[k] * weights[k];
+    weight += weights[k];
   }
-  return out;
+  const score = weight ? Math.round(total / weight) : 0;
+
+  // Previous-period score for the delta chip (same recipe).
+  const prevFocusTarget = Math.max(prevWeek.days * 45, 60);
+  const prevParts = {
+    tasks: prevWeek.completionRate,
+    focus: pct(prevWeek.focusMinutes, prevFocusTarget),
+    habits: null,
+    overdue: null,
+    momentum: null,
+  };
+  let pTotal = 0;
+  let pW = 0;
+  for (const k of ["tasks", "focus"]) {
+    if (prevParts[k] == null) continue;
+    pTotal += prevParts[k] * weights[k];
+    pW += weights[k];
+  }
+  const prevScore = pW ? Math.round(pTotal / pW) : null;
+
+  return {
+    score,
+    prevScore,
+    delta: prevScore == null ? null : score - prevScore,
+    parts,
+  };
 }
 
-function trendBadge(cur, prev) {
-  if (!prev) return `<span class="trend-badge up">${icon("spark")} New activity</span>`;
-  if (cur === prev) return `<span class="trend-badge flat">Even vs previous period</span>`;
-  const pct = Math.round(((cur - prev) / prev) * 100);
-  return pct > 0
-    ? `<span class="trend-badge up">▲ ${pct}% vs previous</span>`
-    : `<span class="trend-badge down">▼ ${Math.abs(pct)}% vs previous</span>`;
-}
-
-function moduleHead(num, title, question) {
-  return `
-    <div class="module-head">
-      <span class="module-num num">${num}</span>
-      <div>
-        <h3>${title}</h3>
-        <div class="module-question">${question}</div>
-      </div>
-    </div>
-  `;
+function scoreLabel(s) {
+  if (s >= 85) return "Outstanding";
+  if (s >= 70) return "Strong week";
+  if (s >= 50) return "Steady";
+  if (s >= 30) return "Needs push";
+  return "Reset time";
 }
 
 export async function renderInsights(view, alive = () => true) {
-  const [stats, prevStats, consistency, goals, projects, tasks] = await Promise.all([
-    rangeStats(state.range),
-    rangeStats(state.range, state.range), // previous equal window, for trend
-    habitConsistency(Math.min(state.range, 90)),
-    goalService.allGoals(),
-    projectService.allProjects(),
+  view.innerHTML = `<div class="page-loading">${icon("clock")} Crunching your numbers…</div>`;
+
+  const days = state.days;
+  const [week, prevWeek, habitsCons, tasksRaw, projects, goals] = await Promise.all([
+    analytics.rangeStats(days),
+    analytics.rangeStats(days, days),
+    analytics.habitConsistency(days),
     taskService.allTasks(),
+    projectService.allProjects(),
+    goalService.allGoals(),
   ]);
   if (!alive()) return;
 
+  const gProg = await goalService.progressMap(goals, projects, tasksRaw);
+  const pProg = projectService.progressMap(projects, tasksRaw);
+
   const today = todayISO();
+  const OPEN = ["Completed", "Cancelled"];
+  const overdueTasks = tasksRaw.filter((t) => t.dueDate && t.dueDate < today && !OPEN.includes(t.status));
+  const score = computeScore({ week, prevWeek, habitsCons, overdueCount: overdueTasks.length });
 
-  // ---------- module 1 data ----------
-  const series = bucketSeries(stats.perDay, state.range);
-  const maxBucket = Math.max(1, ...series.map((s) => s.value));
+  // ----- Task performance -----
+  const completedInWindow = week.tasksCompleted;
+  const urgentDone = tasksRaw.filter(
+    (t) => t.status === "Completed" && t.priority === "Urgent" && t.completedAt?.slice(0, 10) >= week.start
+  ).length;
+  const onTime = tasksRaw.filter(
+    (t) => t.status === "Completed" && t.completedAt && t.dueDate && t.completedAt.slice(0, 10) <= t.dueDate && t.completedAt.slice(0, 10) >= week.start
+  ).length;
+  const doneWithDue = tasksRaw.filter(
+    (t) => t.status === "Completed" && t.completedAt && t.dueDate && t.completedAt.slice(0, 10) >= week.start
+  ).length;
 
-  // ---------- module 2 data ----------
-  const deepShare = stats.focusMinutes ? Math.round((stats.deepMinutes / stats.focusMinutes) * 100) : 0;
+  // ----- Goals & projects -----
+  const activeGoals = goals.filter((g) => !["Completed", "On Hold", "Cancelled"].includes(g.status));
+  const completedGoals = goals.filter((g) => g.status === "Completed");
+  const avgGoalPct = activeGoals.length
+    ? Math.round(activeGoals.reduce((a, g) => a + (gProg[g.id]?.pct ?? 0), 0) / activeGoals.length)
+    : null;
+  const activeProjects = projects.filter((p) => !["Completed", "Cancelled"].includes(p.status));
+  const avgProjPct = activeProjects.length
+    ? Math.round(activeProjects.reduce((a, p) => a + (pProg[p.id]?.pct ?? 0), 0) / activeProjects.length)
+    : null;
+  const atRiskGoals = activeGoals.filter((g) => (gProg[g.id]?.pct ?? 0) < 25);
 
-  // ---------- module 3 data ----------
-  const maxHourMin = Math.max(1, ...stats.hourBuckets);
-  const win = bestWindow(stats.hourBuckets);
-  const wh = (h) => `${((h + 11) % 12) + 1}${h >= 12 ? "PM" : "AM"}`;
+  // ----- Focus -----
+  const bestWin = analytics.bestWindow(week.hourBuckets);
+  const deepShare = pct(week.deepMinutes, week.focusMinutes);
 
-  // ---------- module 6 data ----------
-  const decorate = taskService.decorate(tasks);
-  const openTasks = decorate.filter((t) => !["Completed", "Cancelled"].includes(t.status));
-  const byPriority = ["Urgent", "High", "Medium", "Low"].map((p) => ({
-    p,
-    n: openTasks.filter((t) => t.priority === p).length,
-  }));
-  const overdueCount = openTasks.filter((t) => t.dueDate && t.dueDate < today).length;
-  const prog = await goalService.progressMap(goals, projects, tasks);
-  if (!alive()) return;
-  const atRiskGoals = goals
-    .filter((g) => g.targetDate && g.status !== "Completed")
-    .map((g) => ({ g, daysLeft: diffDays(today, g.targetDate), pct: prog[g.id]?.pct ?? 0 }))
-    .filter((x) => x.daysLeft <= 14 && x.daysLeft >= -30 && x.pct < 60)
-    .sort((a, b) => a.daysLeft - b.daysLeft);
-  const soonProjects = projects
-    .filter((p) => ["Active", "Planning"].includes(p.status) && p.deadline && diffDays(today, p.deadline) <= 14 && diffDays(today, p.deadline) >= -7)
-    .sort((a, b) => a.deadline.localeCompare(b.deadline));
+  // ----- Achievements -----
+  const achievements = [];
+  if (score.score >= 80) achievements.push("🏆 Elite week — score above 80");
+  if (week.tasksCompleted >= 10) achievements.push(`⚡ ${week.tasksCompleted} tasks crushed this period`);
+  if (deepShare != null && deepShare >= 50) achievements.push("🧠 Deep-work champion — most focus was deep work");
+  if (habitsCons.some((h) => h.pct >= 80)) achievements.push(`🔥 Habit master — ${habitsCons.find((h) => h.pct >= 80)?.habit.title} ≥80% consistent`);
+  if (overdueTasks.length === 0 && tasksRaw.some((t) => t.dueDate)) achievements.push("🎯 Zero overdue — inbox and deadlines under control");
+
+  // ----- Recommendations -----
+  const recos = buildRecos({ week, score, overdueTasks, atRiskGoals, habitsCons, bestWin });
 
   view.innerHTML = `
-    <div class="page-header">
-      <div class="eyebrow">Last ${state.range} days · computed from your real activity</div>
-      <div class="page-title-row">
-        <h1>Insights</h1>
-        <div class="seg-control" id="range-seg">
-          ${RANGES.map((r) => `<button class="seg-btn ${state.range === r.days ? "active" : ""}" data-range="${r.days}">${r.label}</button>`).join("")}
-        </div>
+    <!-- ================= HERO ================= -->
+    <div class="insights-hero">
+      <div class="eyebrow">Insights</div>
+      <h1 class="page-title">Your performance,<br />in real numbers</h1>
+      <p class="muted">Last ${days} days · ${fmtDateLong(week.start)} → ${fmtDateLong(week.end)}</p>
+      <div class="period-tabs">
+        ${[7, 30, 90]
+          .map((d) => `<button class="period-tab ${d === days ? "active" : ""}" data-days="${d}">${d === 7 ? "This week" : d === 30 ? "This month" : "This quarter"}</button>`)
+          .join("")}
       </div>
-      <div class="sub">Six lenses on how you actually work.</div>
     </div>
 
-    <div class="insight-modules">
-
-      <!-- 01 VELOCITY -->
-      <section class="card insight-module span-2">
-        ${moduleHead("01", "Velocity", `How much are you shipping — and is it speeding up or slowing down?`)}
-        <div class="module-kpis">
-          <div><div class="stat-value num">${stats.tasksCompleted}</div><div class="stat-label">Completed</div></div>
-          <div>${trendBadge(stats.tasksCompleted, prevStats.tasksCompleted)}</div>
+    <!-- ================= PRODUCTIVITY SCORE ================= -->
+    <div class="score-hero card">
+      <div class="score-ring-wrap"><div class="score-ring num" style="--p:${score.score};">${score.score}</div></div>
+      <div class="score-meta">
+        <div class="score-label">${scoreLabel(score.score)}</div>
+        ${
+          score.delta != null && score.delta !== 0
+            ? `<span class="score-delta ${score.delta > 0 ? "up" : "down"}">${score.delta > 0 ? "↑" : "↓"} ${Math.abs(score.delta)} vs previous period</span>`
+            : `<span class="score-delta flat">— same as before</span>`
+        }
+        <div class="score-parts">
+          ${[
+            ["Tasks", score.parts.tasks],
+            ["Focus", score.parts.focus],
+            ["Habits", score.parts.habits],
+            ["Discipline", score.parts.overdue],
+          ]
+            .filter(([, v]) => v != null)
+            .map(([k, v]) => `<span class="chip">${k} ${v}%</span>`)
+            .join("")}
         </div>
-        <div class="bar-chart">
-          ${series
-            .map(
-              (d) => `
-            <div class="bar-col">
-              <div class="bar-fill" style="height:${Math.max(2, Math.round((d.value / maxBucket) * 96))}px;" title="${d.value}"></div>
-              <div class="bar-label">${d.label}</div>
+      </div>
+    </div>
+
+    <!-- ================= WEEK SUMMARY CHIPS ================= -->
+    <div class="summary-chips">
+      <div class="chip-stat"><b>${week.tasksCompleted}</b><span>tasks done</span><i class="${trend(week.tasksCompleted, prevWeek.tasksCompleted).dir}">${trend(week.tasksCompleted, prevWeek.tasksCompleted).txt}</i></div>
+      <div class="chip-stat"><b>${Math.round(week.focusMinutes / 60)}h</b><span>${week.focusMinutes % 60 ? `${week.focusMinutes % 60}m extra` : "focus"}</span><i class="${trend(week.focusMinutes, prevWeek.focusMinutes).dir}">${trend(week.focusMinutes, prevWeek.focusMinutes).txt}</i></div>
+      <div class="chip-stat"><b>${week.sessionCount}</b><span>sessions</span></div>
+      <div class="chip-stat"><b>${week.completionRate != null ? week.completionRate + "%" : "—"}</b><span>on-time rate</span></div>
+    </div>
+
+    <div class="home-grid-v2 insights-grid">
+      <div class="home-col-main">
+
+        <!-- ===== 1 · PRODUCTIVITY OVERVIEW ===== -->
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">📊</span><div><h2>Productivity overview</h2><p>Daily output across the period</p></div></div>
+          ${barsHTML(week.perDay)}
+          <div class="module-foot muted">Peak day: ${peakDay(week.perDay)}</div>
+        </section>
+
+        <!-- ===== 2 · TASK PERFORMANCE ===== -->
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">✅</span><div><h2>Task performance</h2><p>How work moves through your system</p></div></div>
+          <div class="stat-grid">
+            <div class="stat-box"><b class="num">${completedInWindow}</b><span>Completed</span></div>
+            <div class="stat-box"><b class="num">${urgentDone}</b><span>Urgent done</span></div>
+            <div class="stat-box"><b class="num">${doneWithDue ? `${onTime}/${doneWithDue}` : "—"}</b><span>On time</span></div>
+            <div class="stat-box"><b class="num">${overdueTasks.length}</b><span>Overdue now</span></div>
+          </div>
+          <div class="meter-row">
+            <span>Avg estimate accuracy</span>
+            <b>${week.avgTaskMinutes != null ? `${week.avgTaskMinutes} min/task` : "Not enough data yet"}</b>
+          </div>
+          <div class="meter-row">
+            <span>Completion rate (due in window)</span>
+            <b>${week.completionRate != null ? `${week.completionRate}%` : "No deadlines in window"}</b>
+          </div>
+        </section>
+
+        <!-- ===== 3 · GOALS & PROJECTS ===== -->
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">🎯</span><div><h2>Goals &amp; projects</h2><p>Long-range progress health</p></div></div>
+          <div class="stat-grid">
+            <div class="stat-box"><b class="num">${activeGoals.length}</b><span>Active goals</span></div>
+            <div class="stat-box"><b class="num">${completedGoals.length}</b><span>Completed goals</span></div>
+            <div class="stat-box"><b class="num">${avgGoalPct == null ? "—" : avgGoalPct + "%"}</b><span>Avg goal progress</span></div>
+            <div class="stat-box"><b class="num">${avgProjPct == null ? "—" : avgProjPct + "%"}</b><span>Avg project progress</span></div>
+          </div>
+          ${
+            atRiskGoals.length
+              ? atRiskGoals
+                  .slice(0, 3)
+                  .map(
+                    (g) => `
+            <div class="risk-row">
+              <span class="attention-sev orange"></span>
+              <span class="risk-name">${esc(g.title)}</span>
+              <b class="num">${gProg[g.id]?.pct ?? 0}%</b>
             </div>`
-            )
-            .join("")}
-        </div>
-      </section>
+                  )
+                  .join("")
+              : `<div class="allclear-line">🟢 Every active goal has meaningful traction.</div>`
+          }
+        </section>
+      </div>
 
-      <!-- 02 FOCUS QUALITY -->
-      <section class="card insight-module">
-        ${moduleHead("02", "Focus quality", `How much of your focus time is real deep work?`)}
-        <div class="module-kpis">
-          <div><div class="stat-value num">${minutesToHuman(stats.focusMinutes)}</div><div class="stat-label">Total focus</div></div>
-          <div><div class="stat-value num">${stats.sessionCount}</div><div class="stat-label">Sessions</div></div>
-        </div>
-        <div class="split-bar">
-          <div class="split-fill deep" style="width:${deepShare}%;"></div>
-          <div class="split-fill shallow" style="width:${100 - deepShare}%;"></div>
-        </div>
-        <div class="split-legend">
-          <span>${icon("focus")} Deep work (45m+) · <strong class="num">${deepShare}%</strong></span>
-          <span>Shorter blocks · <strong class="num">${100 - deepShare}%</strong></span>
-        </div>
-      </section>
+      <div class="side-stack">
 
-      <!-- 03 BEST HOURS -->
-      <section class="card insight-module">
-        ${moduleHead("03", "Peak hours", `When does your brain actually show up?`)}
-        <div class="heat-strip">
-          ${stats.hourBuckets
-            .map((m, h) => {
-              const intensity = m / maxHourMin;
-              const alpha = m ? 0.15 + intensity * 0.85 : 0;
-              return `<div class="heat-cell ${win.startHour === h || win.startHour + 1 === h ? "peak" : ""}" style="${m ? `background: rgba(61,90,128,${alpha.toFixed(2)});` : ""}" title="${h}:00 · ${m} min"></div>`;
-            })
-            .join("")}
-        </div>
-        <div class="heat-axis">
-          ${[0, 4, 8, 12, 16, 20].map((h) => `<span>${h}h</span>`).join("")}
-          <span style="flex:0.9"></span><span style="flex:0.9"></span><span style="flex:0.9"></span>
-        </div>
-        ${
-          win.totalMinutes > 60
-            ? `<p class="module-note">Your strongest window is <strong>${wh(win.startHour)}–${wh(win.startHour + 3)}</strong> — ${minutesToHuman(win.totalMinutes)} landed there.</p>`
-            : `<p class="module-note">Run more focus sessions to reveal your peak window.</p>`
-        }
-      </section>
-
-      <!-- 04 RELIABILITY -->
-      <section class="card insight-module">
-        ${moduleHead("04", "Reliability", `Do you finish what you schedule?`)}
-        <div class="module-kpis">
-          <div><div class="stat-value num">${stats.completionRate === null ? "—" : `${stats.completionRate}%`}</div><div class="stat-label">Due tasks completed</div></div>
-          <div><div class="stat-value num">${stats.avgTaskMinutes ? minutesToHuman(stats.avgTaskMinutes) : "—"}</div><div class="stat-label">Avg actual duration</div></div>
-        </div>
-        <div class="progress-track big"><div class="progress-fill" style="width:${stats.completionRate ?? 0}%"></div></div>
-        <p class="module-note">${
-          stats.completionRate === null
-            ? "No due dates in this window yet."
-            : stats.completionRate >= 75
-              ? "Healthy — your planning estimates match reality."
-              : "Below 75%. Try scheduling fewer, bigger blocks per day."
-        }</p>
-      </section>
-
-      <!-- 05 HABITS -->
-      <section class="card insight-module">
-        ${moduleHead("05", "Habit engine", `Which routines are compounding?`)}
-        ${
-          consistency.length
-            ? consistency
-                .map(
-                  (c) => `
-          <div class="consistency-row">
-            <span class="cr-name">${c.habit.title}</span>
-            <div class="cr-bar-track"><div class="cr-bar-fill ${c.pct >= 70 ? "good" : c.pct >= 40 ? "" : "warn"}" style="width:${c.pct ?? 0}%;"></div></div>
-            <span class="cr-pct num">${c.pct === null ? "—" : `${c.pct}%`}</span>
-          </div>`
-                )
-                .join("")
-            : `<div class="empty-state" style="padding:var(--sp-5);"><h3>No scheduled habits</h3><p>Add one to start tracking.</p></div>`
-        }
-      </section>
-
-      <!-- 06 BACKLOG & RISK -->
-      <section class="card insight-module span-2">
-        ${moduleHead("06", "Backlog & risk", `What's stacking up — and what's about to slip?`)}
-        <div class="risk-layout">
-          <div class="risk-block">
-            <div class="eyebrow">Open workload by priority</div>
-            ${byPriority
-              .map(
-                (b) => `
-              <div class="consistency-row">
-                <span class="cr-name">${b.p}</span>
-                <div class="cr-bar-track"><div class="cr-bar-fill ${b.p === "Urgent" ? "warn" : ""}" style="width:${openTasks.length ? Math.round((b.n / Math.max(...byPriority.map((x) => x.n))) * 100) : 0}%;"></div></div>
-                <span class="cr-pct num">${b.n}</span>
-              </div>`
-              )
-              .join("")}
-            <p class="module-note">${overdueCount ? `<strong class="num">${overdueCount}</strong> overdue task${overdueCount === 1 ? "" : "s"} — clear these first.` : "Nothing overdue. Clean slate."}</p>
+        <!-- ===== 4 · FOCUS & TIME ===== -->
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">⏱</span><div><h2>Focus &amp; time</h2><p>Where your attention actually went</p></div></div>
+          <div class="focus-hours-row">
+            <div><b class="num">${minutesToHuman(week.focusMinutes)}</b><span>focused</span></div>
+            <div><b class="num">${minutesToHuman(week.deepMinutes)}</b><span>deep work</span></div>
+            <div><b class="num">${deepShare == null ? "—" : deepShare + "%"}</b><span>deep share</span></div>
           </div>
-          <div class="risk-block">
-            <div class="eyebrow">Goals nearing target date</div>
-            ${
-              atRiskGoals.length
-                ? atRiskGoals
-                    .slice(0, 4)
-                    .map(
-                      (x) => `
-              <div class="risk-item">
-                <div><div class="ri-title">${x.g.title}</div>
-                <div class="ri-sub">${x.daysLeft >= 0 ? `${x.daysLeft} day${x.daysLeft === 1 ? "" : "s"} left` : `${Math.abs(x.daysLeft)} days overdue`} · <span class="num">${x.pct}%</span> progress</div></div>
-                <span class="badge ${x.daysLeft < 0 ? "badge-danger" : x.daysLeft <= 7 ? "badge-warn" : "badge-neutral"}">${x.daysLeft < 0 ? "Overdue" : x.daysLeft <= 7 ? "Tight" : "Watch"}</span>
-              </div>`
-                    )
-                    .join("")
-                : `<p class="module-note">No goals are close to their target dates with low progress. Steady ship.</p>`
-            }
-            ${
-              soonProjects.length
-                ? `<div class="eyebrow" style="margin-top:14px;">Projects nearing deadline</div>
-                   ${soonProjects
-                     .slice(0, 3)
-                     .map(
-                       (p) => `
-              <div class="risk-item">
-                <div><div class="ri-title">${p.name}</div><div class="ri-sub">Due ${p.deadline}</div></div>
-                <span class="badge badge-warn">Soon</span>
-              </div>`
-                     )
-                     .join("")}`
-                : ""
-            }
+          ${hourHeatHTML(week.hourBuckets)}
+          <div class="module-foot muted">Golden window: <b class="num">${String(bestWin.startHour).padStart(2, "0")}:00–${String(bestWin.startHour + 3).padStart(2, "0")}:00</b> — guard it fiercely.</div>
+        </section>
+
+        <!-- ===== 5 · HABITS & CONSISTENCY ===== -->
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">🔄</span><div><h2>Habits &amp; consistency</h2><p>Scheduled vs actually logged</p></div></div>
+          ${
+            habitsCons.length
+              ? habitsCons
+                  .sort((a, b) => b.pct - a.pct)
+                  .map(
+                    (h) => `
+            <div class="habit-cons-row">
+              <div class="habit-cons-top"><span>${esc(h.habit.title)}</span><b class="num">${h.pct}%</b></div>
+              <div class="progress-track"><div class="progress-fill ${h.pct >= 70 ? "" : h.pct >= 40 ? "warn" : "bad"}" style="width:${h.pct}%"></div></div>
+              <div class="habit-cons-sub muted">${h.done}/${h.scheduled} scheduled days kept</div>
+            </div>`
+                  )
+                  .join("")
+              : `<div class="empty-state" style="padding:16px;"><p>No scheduled habits in this window.</p></div>`
+          }
+        </section>
+
+        <!-- ===== ACHIEVEMENTS ===== -->
+        ${
+          achievements.length
+            ? `
+        <section class="card insight-module">
+          <div class="module-head"><span class="module-emoji">🏅</span><div><h2>Achievements unlocked</h2></div></div>
+          ${achievements.map((a) => `<div class="achieve-line">${a}</div>`).join("")}
+        </section>`
+            : ""
+        }
+
+        <!-- ===== AT RISK ===== -->
+        ${
+          overdueTasks.length || atRiskGoals.length
+            ? `
+        <section class="card insight-module risk-module">
+          <div class="module-head"><span class="module-emoji">⚠️</span><div><h2>At risk right now</h2></div></div>
+          ${overdueTasks.slice(0, 4).map((t) => `<div class="risk-row"><span class="attention-sev red"></span><span class="risk-name">${esc(t.title)}</span><b class="num">${t.dueDate}</b></div>`).join("")}
+          ${atRiskGoals.slice(0, 3).map((g) => `<div class="risk-row"><span class="attention-sev orange"></span><span class="risk-name">${esc(g.title)}</span><b class="num">${gProg[g.id]?.pct ?? 0}%</b></div>`).join("")}
+        </section>`
+            : ""
+        }
+
+        <!-- ===== 6 · AI PERSONAL INSIGHTS ===== -->
+        <section class="ai-insight-banner insight-module">
+          <div class="ai-insight-head">${icon("spark")} AI personal insights 💡</div>
+          ${recos.map((r) => `<div class="ai-line"><span class="ai-line-icon">${r.icon}</span><div class="ai-line-text">${r.text}</div></div>`).join("")}
+          <div class="ai-insight-actions">
+            <a href="#/assistant" class="btn btn-sm btn-primary">Ask my assistant</a>
+            <a href="#/focus" class="btn btn-sm btn-secondary">Bank a session</a>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- ===== WHAT SHOULD I CHANGE ===== -->
+        <section class="card insight-module change-module">
+          <div class="module-head"><span class="module-emoji">🔮</span><div><h2>"What should I change?"</h2></div></div>
+          ${changeAdvice({ score, week, habitsCons, bestWin, overdueTasks })}
+        </section>
+
+      </div>
     </div>
   `;
 
-  view.querySelectorAll("[data-range]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      state.range = Number(btn.dataset.range);
+  view.querySelectorAll(".period-tab").forEach((tab) =>
+    tab.addEventListener("click", () => {
+      state.days = Number(tab.dataset.days);
       renderInsights(view, alive);
     })
   );
+}
+
+// ---------- chart helpers ----------
+
+function barsHTML(perDay) {
+  const maxV = Math.max(...perDay.map((d) => d.completed + d.focusMin / 15), 1);
+  return `
+  <div class="bar-chart">
+    ${perDay
+      .map((d) => {
+        const hC = Math.round((d.completed / maxV) * 100);
+        const hF = Math.round((d.focusMin / 15 / maxV) * 100);
+        return `
+      <div class="bar-col" title="${d.date}: ${d.completed} tasks · ${d.focusMin}m focus">
+        <div class="bar-stack">
+          <div class="bar-focus" style="height:${hF}%"></div>
+          <div class="bar-task" style="height:${hC}%"></div>
+        </div>
+        <span class="bar-lbl">${d.date.slice(8)}</span>
+      </div>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+function peakDay(perDay) {
+  const best = [...perDay].sort((a, b) => b.completed - a.completed || b.focusMin - a.focusMin)[0];
+  if (!best || (!best.completed && !best.focusMin)) return "quiet period";
+  return `${best.date} (${best.completed} tasks, ${best.focusMin}m)`;
+}
+
+function hourHeatHTML(hourBuckets) {
+  const max = Math.max(...hourBuckets, 1);
+  return `
+  <div class="hour-heat">
+    ${Array.from({ length: 24 }, (_, h) => {
+      const inten = hourBuckets[h] / max;
+      return `<div class="heat-cell" style="opacity:${hourBuckets[h] ? 0.25 + inten * 0.75 : 0.08};" title="${String(h).padStart(2, "0")}:00 — ${hourBuckets[h]}m"></div>`;
+    }).join("")}
+  </div>
+  <div class="heat-scale muted"><span>5am</span><span>noon</span><span>11pm</span></div>`;
+}
+
+// ---------- narrative helpers ----------
+
+function buildRecos({ week, score, overdueTasks, atRiskGoals, habitsCons, bestWin }) {
+  const out = [];
+  if (week.focusMinutes < week.days * 30)
+    out.push({ icon: "⏱", text: `You averaged only ${Math.round(week.focusMinutes / Math.max(days1(week), 1))} min of focus per day. Book one <b>${bestWin.startHour}:00</b> block tomorrow — that's your proven golden window.` });
+  else out.push({ icon: "⏱", text: `Solid focus volume (${minutesToHuman(week.focusMinutes)}). Protect it by batching shallow tasks away from <b>${bestWin.startHour}:00–${bestWin.startHour + 3}:00</b>.` });
+
+  if (overdueTasks.length >= 3)
+    out.push({ icon: "⚠️", text: `<b>${overdueTasks.length}</b> overdue tasks are compounding stress. Reschedule or delete half of them right now — a shorter honest list beats a long guilty one.` });
+  else if (overdueTasks.length) out.push({ icon: "⚠️", text: `One overdue task left behind: "${esc(overdueTasks[0].title)}". Do it first thing tomorrow.` });
+
+  const weakest = habitsCons.sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0))[0];
+  if (weakest && weakest.pct < 50)
+    out.push({ icon: "🔄", text: `"${esc(weakest.habit.title)}" held only ${weakest.pct}% of scheduled days. Shrink it — a two-minute version keeps identity alive until capacity returns.` });
+
+  if (atRiskGoals.length >= 2)
+    out.push({ icon: "🎯", text: `<b>${atRiskGoals.length} goals</b> sit below 25%. Pick ONE to advance this month; park the rest explicitly instead of letting them drain you.` });
+
+  if (out.length < 3)
+    out.push({ icon: "📈", text: `Your completion rate ${week.completionRate != null ? `is ${week.completionRate}%` : "has no deadline data yet"} — adding due dates to key tasks makes future scores sharper.` });
+  return out.slice(0, 4);
+}
+
+function changeAdvice({ score, week, habitsCons, bestWin, overdueTasks }) {
+  const advice = [];
+  if (score.parts.focus == null || score.parts.focus < 50)
+    advice.push(`<b>Time-blocking:</b> schedule focus like meetings. Your data says ${bestWin.startHour}:00 works best — put the hardest task there.`);
+  if (score.parts.tasks != null && score.parts.tasks < 60)
+    advice.push(`<b>Smaller tasks:</b> break items over 60 minutes into 25-minute slices; completion rate climbs when finishes come faster.`);
+  if (habitsCons.length && habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length < 60)
+    advice.push(`<b>Habit stacking:</b> attach weak habits to strong ones ("after coffee → stretch"). Context beats willpower.`);
+  if (overdueTasks.length)
+    advice.push(`<b>Weekly reset:</b> every Friday, reschedule or delete every overdue item. Start Monday at zero guilt.`);
+  if (!advice.length)
+    advice.push(`<b>You're in flow.</b> The next lever: raise your weekly focus target by 10% and keep everything else stable.`);
+  return advice.map((a) => `<div class="ai-line"><span class="ai-line-icon">→</span><div class="ai-line-text">${a}</div></div>`).join("");
+}
+
+function days1(w) {
+  return w.days || 7;
 }

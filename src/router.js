@@ -1,8 +1,10 @@
 import { icon } from "./dom.js";
+import { on } from "./utils/bus.js";
 
 const routes = {};
 let currentRoute = null;
 let renderSeq = 0;
+let refreshTimer = null;
 
 export function registerRoute(name, renderFn) {
   routes[name] = renderFn;
@@ -20,6 +22,16 @@ export function getCurrentRoute() {
 export async function rerender() {
   const route = resolveRouteFromHash();
   await renderRoute(route);
+}
+
+// Instant refresh: services emit "data-changed" after any mutation.
+// Debounced so a burst of writes causes a single re-render.
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => {
+    if (!currentRoute) return;
+    rerender().catch((err) => console.error("[router] refresh failed", err));
+  }, 60);
 }
 
 function resolveRouteFromHash() {
@@ -55,6 +67,8 @@ async function renderRoute(route) {
 
 export function initRouter() {
   const view = document.getElementById("view");
+
+  on("data-changed", scheduleRefresh);
 
   async function onRouteChange() {
     const route = resolveRouteFromHash();

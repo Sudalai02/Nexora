@@ -60,6 +60,20 @@ export async function clearAlerts() {
   document.dispatchEvent(new CustomEvent("nexora:alerts-changed"));
 }
 
+// Swipe-to-clear support: remove a single alert by id.
+export async function removeAlert(id) {
+  await db.del("alerts", id);
+  document.dispatchEvent(new CustomEvent("nexora:alerts-changed"));
+}
+
+export async function markRead(id) {
+  const alert = await db.get("alerts", id);
+  if (alert && !alert.read) {
+    await db.put("alerts", { ...alert, read: true });
+    document.dispatchEvent(new CustomEvent("nexora:alerts-changed"));
+  }
+}
+
 // ---------- permission ----------
 
 export function permissionState() {

@@ -1,6 +1,7 @@
 import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
 import * as recycle from "./recycleService.js";
+import { emit } from "../utils/bus.js";
 
 const DONE = ["Completed", "Cancelled"];
 
@@ -38,6 +39,7 @@ export async function createProject(data) {
     createdAt: new Date().toISOString(),
   };
   await db.put("projects", project);
+  emit("data-changed", { entity: "projects" });
   return project;
 }
 
@@ -46,11 +48,14 @@ export async function updateProject(id, patch) {
   if (!project) throw new Error(`Project ${id} not found`);
   const next = { ...project, ...patch };
   await db.put("projects", next);
+  emit("data-changed", { entity: "projects" });
   return next;
 }
 
 // Deleting a project keeps its tasks untouched so restoring the
 // project brings every relationship back exactly as it was.
 export async function removeProject(id) {
-  return recycle.softDelete("projects", id);
+  const entry = await recycle.softDelete("projects", id);
+  emit("data-changed", { entity: "projects" });
+  return entry;
 }

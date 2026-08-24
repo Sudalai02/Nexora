@@ -2,6 +2,7 @@ import * as db from "../store/db.js";
 import { uid } from "../utils/id.js";
 import { todayISO, weekdayOf, addDays } from "../utils/dates.js";
 import * as recycle from "./recycleService.js";
+import { emit } from "../utils/bus.js";
 
 const WD_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -22,18 +23,23 @@ export async function createHabit(data) {
     createdAt: new Date().toISOString(),
   };
   await db.put("habits", habit);
+  emit("data-changed", { entity: "habits" });
   return habit;
 }
 
 export async function updateHabit(id, patch) {
   const h = await db.get("habits", id);
   if (!h) throw new Error(`Habit ${id} not found`);
-  return db.put("habits", { ...h, ...patch });
+  const next = await db.put("habits", { ...h, ...patch });
+  emit("data-changed", { entity: "habits" });
+  return next;
 }
 
 export async function removeHabit(id) {
   // Habit logs stay in place so a restore brings the full history back.
-  return recycle.softDelete("habits", id);
+  const entry = await recycle.softDelete("habits", id);
+  emit("data-changed", { entity: "habits" });
+  return entry;
 }
 
 export function weekdayLabel(wd) {
@@ -55,9 +61,11 @@ export async function toggleLog(habitId, iso = todayISO()) {
   const existing = await db.get("habitLogs", id);
   if (existing?.done) {
     await db.del("habitLogs", id);
+    emit("data-changed", { entity: "habitLogs" });
     return false;
   }
   await db.put("habitLogs", { id, habitId, date: iso, done: true });
+  emit("data-changed", { entity: "habitLogs" });
   return true;
 }
 
