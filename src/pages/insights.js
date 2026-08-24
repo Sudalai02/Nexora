@@ -142,6 +142,7 @@ export async function renderInsights(view, alive = () => true) {
 
   // ----- Focus -----
   const bestWin = analytics.bestWindow(week.hourBuckets);
+  const maxHeat = Math.max(...week.hourBuckets, 1);
   const deepShare = pct(week.deepMinutes, week.focusMinutes);
 
   // ----- Achievements -----
@@ -206,7 +207,7 @@ export async function renderInsights(view, alive = () => true) {
         <!-- ===== 1 · PRODUCTIVITY OVERVIEW ===== -->
         <section class="card insight-module">
           <div class="module-head"><span class="module-emoji">📊</span><div><h2>Productivity overview</h2><p>Daily output across the period</p></div></div>
-          ${barsHTML(week.perDay)}
+          ${barsHTML(week.perDay, days)}
           <div class="module-foot muted">Peak day: ${peakDay(week.perDay)}</div>
         </section>
 
@@ -266,7 +267,15 @@ export async function renderInsights(view, alive = () => true) {
             <div><b class="num">${minutesToHuman(week.deepMinutes)}</b><span>deep work</span></div>
             <div><b class="num">${deepShare == null ? "—" : deepShare + "%"}</b><span>deep share</span></div>
           </div>
-          ${hourHeatHTML(week.hourBuckets)}
+          <div class="heat-scroller" id="heat-scroller">
+            <div class="hour-heat">
+              ${Array.from({ length: 24 }, (_, h) => {
+                const inten = week.hourBuckets[h] / maxHeat;
+                return `<div class="heat-cell" style="opacity:${week.hourBuckets[h] ? 0.25 + inten * 0.75 : 0.08};" title="${String(h).padStart(2, "0")}:00 — ${week.hourBuckets[h]}m"></div>`;
+              }).join("")}
+            </div>
+          </div>
+          <div class="heat-scale muted"><span>Drag ↔ to explore</span><span>5am → 11pm</span></div>
           <div class="module-foot muted">Golden window: <b class="num">${String(bestWin.startHour).padStart(2, "0")}:00–${String(bestWin.startHour + 3).padStart(2, "0")}:00</b> — guard it fiercely.</div>
         </section>
 
@@ -339,47 +348,80 @@ export async function renderInsights(view, alive = () => true) {
       renderInsights(view, alive);
     })
   );
+
+  // ---- drag-to-scroll for the 24h heatmap (touch works natively) ----
+  const scroller = view.querySelector("#heat-scroller");
+  if (scroller) {
+    let down = false;
+    let startX = 0;
+    let startLeft = 0;
+    scroller.addEventListener("pointerdown", (e) => {
+      down = true;
+      startX = e.clientX;
+      startLeft = scroller.scrollLeft;
+      scroller.classList.add("dragging");
+    });
+    window.addEventListener("pointermove", (e) => {
+      if (!down) return;
+      scroller.scrollLeft = startLeft - (e.clientX - startX);
+    });
+    window.addEventListener("pointerup", () => {
+      down = false;
+      scroller?.classList.remove("dragging");
+    });
+  }
 }
 
 // ---------- chart helpers ----------
 
-function barsHTML(perDay) {
-  const maxV = Math.max(...perDay.map((d) => d.completed + d.focusMin / 15), 1);
+function barsHTML(perDay, days) {
+  // Daily bars for the week view; weekly buckets for 30/90 days so
+  // the chart stays readable instead of 90 cramped slivers.
+  let buckets;
+  if (days <= 7) {
+    buckets = perDay.map((d) => ({
+      label: d.date.slice(8),
+      completed: d.completed,
+      focusMin: d.focusMin,
+    }));
+  } else {
+    buckets = [];
+    for (let i = 0; i < perDay.length; i += 7) {
+      const chunk = perDay.slice(i, i + 7);
+      if (!chunk.length) break;
+      buckets.push({
+        label: `${Number(chunk[0].date.slice(8))}/${chunk[0].date.slice(5, 7)}`,
+        completed: chunk.reduce((a, d) => a + d.completed, 0),
+        focusMin: chunk.reduce((a, d) => a + d.focusMin, 0),
+      });
+    }
+  }
+  const maxV = Math.max(...buckets.map((d) => d.completed + d.focusMin / 15), 1);
   return `
-  <div class="bar-chart">
-    ${perDay
+  <div class="bar-chart ${days > 7 ? "bar-chart-wide" : ""}">
+    ${buckets
       .map((d) => {
         const hC = Math.round((d.completed / maxV) * 100);
         const hF = Math.round((d.focusMin / 15 / maxV) * 100);
         return `
-      <div class="bar-col" title="${d.date}: ${d.completed} tasks · ${d.focusMin}m focus">
+      <div class="bar-col" title="${days > 7 ? `Week of ${d.label}` : d.date}: ${d.completed} tasks · ${d.focusMin}m focus">
         <div class="bar-stack">
           <div class="bar-focus" style="height:${hF}%"></div>
           <div class="bar-task" style="height:${hC}%"></div>
         </div>
-        <span class="bar-lbl">${d.date.slice(8)}</span>
+        <span class="bar-lbl">${d.label}</span>
       </div>`;
       })
       .join("")}
-  </div>`;
+  </div>
+  ${days > 7 ? `<div class="module-foot muted">Bars = weeks (start date labeled)</div>` : ""}
+  `;
 }
 
 function peakDay(perDay) {
   const best = [...perDay].sort((a, b) => b.completed - a.completed || b.focusMin - a.focusMin)[0];
   if (!best || (!best.completed && !best.focusMin)) return "quiet period";
   return `${best.date} (${best.completed} tasks, ${best.focusMin}m)`;
-}
-
-function hourHeatHTML(hourBuckets) {
-  const max = Math.max(...hourBuckets, 1);
-  return `
-  <div class="hour-heat">
-    ${Array.from({ length: 24 }, (_, h) => {
-      const inten = hourBuckets[h] / max;
-      return `<div class="heat-cell" style="opacity:${hourBuckets[h] ? 0.25 + inten * 0.75 : 0.08};" title="${String(h).padStart(2, "0")}:00 — ${hourBuckets[h]}m"></div>`;
-    }).join("")}
-  </div>
-  <div class="heat-scale muted"><span>5am</span><span>noon</span><span>11pm</span></div>`;
 }
 
 // ---------- narrative helpers ----------

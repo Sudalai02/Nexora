@@ -523,11 +523,11 @@ export async function renderAssistant(view, alive = () => true) {
       </div>
 
       <div class="chat-shell">
-        <details class="prompt-library" open>
-          <summary>Prompt library · 20 starters</summary>
-          <div class="chat-suggest-row">
-            <button class="chat-suggest-chip accent" data-plan-goal>${icon("flag")} Plan a goal</button>
-            ${PROMPTS.map((s) => `<button class="chat-suggest-chip" data-suggest="${s.replace(/"/g, "&quot;")}">${s}</button>`).join("")}
+        <details class="prompt-library" id="prompt-library">
+          <summary>${icon("spark")} Prompt library · search &amp; pick</summary>
+          <div class="prompt-picker">
+            <input type="text" id="prompt-search" placeholder="🔍 Type to filter prompts…" autocomplete="off" />
+            <div id="prompt-list" class="prompt-list"></div>
           </div>
         </details>
         <div class="chat-scroll" id="chat-scroll">
@@ -581,7 +581,39 @@ export async function renderAssistant(view, alive = () => true) {
 
     view.querySelectorAll("[data-suggest]").forEach((chip) => chip.addEventListener("click", () => send(chip.dataset.suggest)));
 
-    view.querySelector("[data-plan-goal]").addEventListener("click", async () => {
+    // ---- Prompt library: dropdown + search filter, click fills the
+    // ---- composer; the user presses Send themselves.
+    const lib = view.querySelector("#prompt-library");
+    const searchEl = view.querySelector("#prompt-search");
+    const listEl = view.querySelector("#prompt-list");
+    const input = view.querySelector("#chat-input");
+
+    function renderPromptList() {
+      const q = (searchEl?.value || "").toLowerCase().trim();
+      // sort: startsWith matches first, then alphabetical
+      const matches = PROMPTS
+        .filter((p) => !q || p.toLowerCase().includes(q))
+        .sort((a, b) => {
+          const aw = a.toLowerCase().startsWith(q) ? 0 : 1;
+          const bw = b.toLowerCase().startsWith(q) ? 0 : 1;
+          return aw - bw || a.localeCompare(b);
+        })
+        .slice(0, 8);
+      listEl.innerHTML = matches.length
+        ? matches.map((p) => `<button type="button" class="prompt-option" data-prompt="${p.replace(/"/g, "&quot;")}">${p}</button>`).join("")
+        : `<div class="prompt-empty">No prompts match “${q}” — just send your own question.</div>`;
+      listEl.querySelectorAll("[data-prompt]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          input.value = btn.dataset.prompt;
+          input.focus();
+          lib.removeAttribute("open"); // collapse after picking
+        })
+      );
+    }
+    renderPromptList();
+    searchEl.addEventListener("input", renderPromptList);
+
+    view.querySelector("[data-plan-goal]")?.addEventListener("click", async () => {
       const created = await runGoalPlanner();
       if (created && alive()) window.location.hash = "#/goals";
     });

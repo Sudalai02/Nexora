@@ -848,3 +848,107 @@
   .task-row, .note-row, .nextup-row { padding-block: var(--sp-4); }
   .icon-btn { width: 42px; height: 42px; }
 }
+
+/* ============ MODAL FIT FIX — never hide actions off-screen ============ */
+.modal-backdrop { padding-top: min(10vh, 56px); padding-bottom: var(--sp-4); }
+.form-modal {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.goal-card-top .icon-btn { flex-shrink: 0; }
+@media (max-width: 720px) {
+  /* Action-sheet feel: buttons stack full-width and stay reachable */
+  .panel-actions { flex-direction: column-reverse; }
+  .panel-actions .btn { width: 100%; justify-content: center; }
+  .form-modal-head h3 { font-size: 18px; }
+}
+
+/* ============ FOCUS & TIME — draggable hour heatmap ============ */
+.heat-scroller {
+  overflow-x: auto;
+  scrollbar-width: none;
+  cursor: grab;
+  user-select: none;
+  touch-action: pan-y;
+}
+.heat-scroller::-webkit-scrollbar { display: none; }
+.heat-scroller.dragging { cursor: grabbing; }
+.heat-scroller .hour-heat {
+  grid-template-columns: repeat(24, 26px);
+  height: 44px;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* ============ HOME HABIT CHIPS (info-only, two lines) ============ */
+.habit-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: var(--sp-3);
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  background: var(--paper-raised);
+  color: var(--ink);
+  text-decoration: none;
+  min-width: 150px;
+}
+.habit-chip.done { border-color: var(--good); background: var(--good-soft); }
+.habit-chip-title { font-size: 14px; font-weight: 600; line-height: 1.35; }
+.habit-chip-meta { font-size: 11.5px; color: var(--graphite); white-space: nowrap; }
+
+/* ============ ASSISTANT PROMPT PICKER ============ */
+.prompt-library summary {
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--focus);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+.prompt-library summary::-webkit-details-marker { display: none; }
+.prompt-picker { margin-top: var(--sp-3); }
+#prompt-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--r-md);
+  font-size: 15px;
+  outline: none;
+  background: var(--paper-raised);
+}
+#prompt-search:focus { border-color: var(--focus-dim); }
+.prompt-list { margin-top: var(--sp-2); display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.prompt-option {
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  color: var(--ink-soft);
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.prompt-option:hover { background: var(--focus-soft); color: var(--ink); }
+.prompt-empty { font-size: 13px; color: var(--graphite-dim); padding: var(--sp-3); }
+
+/* ============ NOTES MOBILE POLISH ============ */
+.folder-rail { flex-wrap: nowrap; }
+.note-reader-body p, .note-reader-body li { overflow-wrap: anywhere; word-break: break-word; }
+@media (max-width: 720px) {
+  .note-row-title { font-size: 17px; }
+  .note-row-date { font-size: 13px; }
+  .reader-title { font-size: 27px; }
+  .note-reader-body.big,
+  .note-editor-page .note-textarea { font-size: 17px; line-height: 1.8; }
+  .note-meta-row { flex-wrap: wrap; row-gap: 4px; font-size: 13px; }
+  .note-title-input { width: 100%; box-sizing: border-box; font-size: 19px; }
+  .note-textarea { width: 100%; box-sizing: border-box; min-height: 46vh; }
+  .ai-note-actions { flex-wrap: wrap; gap: var(--sp-2); }
+  .ai-note-actions .btn { flex: 1 1 45%; justify-content: center; }
+}

@@ -37,8 +37,12 @@ import { toast } from "../ui/toast.js";
 const slider = {
   day: null,
   index: 0,
-  dismissed: [],
 };
+
+function toFloat(hhmm) {
+  const [h, m] = String(hhmm || "0:0").split(":").map(Number);
+  return (h || 0) + (m || 0) / 60;
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -50,10 +54,6 @@ function greeting() {
 function minutesOf(hhmm) {
   const [h, m] = String(hhmm || "").split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
-}
-
-function flowId(item) {
-  return `${item.kind}:${item.ref.id}`;
 }
 
 function pct(n, d) {
@@ -113,7 +113,7 @@ async function buildFlow({ tasks, habitList, todayEvents, logsToday, goals, proj
     .slice(0, 8)
     .forEach((t) => items.push({ kind: "task", overdue: false, ref: t }));
 
-  return items.filter((i) => !slider.dismissed.includes(flowId(i)));
+  return items;
 }
 
 export async function renderHome(view, alive = () => true) {
@@ -121,7 +121,6 @@ export async function renderHome(view, alive = () => true) {
   if (slider.day !== today) {
     slider.day = today;
     slider.index = 0;
-    slider.dismissed = [];
   }
 
   const [profile, tasks, projects, goals, habitList, stats, todayEvents, logsToday, week, prevWeek, inboxItems] =
@@ -184,8 +183,8 @@ export async function renderHome(view, alive = () => true) {
       sev: "red",
       title: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? "s" : ""}`,
       sub: overdueTasks.slice(0, 3).map((t) => t.title).join(" · "),
-      action: "fix-overdue",
-      label: "Fix all",
+      route: "#/tasks",
+      label: "Open tasks",
     });
   if (blockedTasks.length)
     attention.push({
@@ -360,10 +359,10 @@ export async function renderHome(view, alive = () => true) {
           <div class="now-actions-v2">
             ${
               current.kind === "task"
-                ? `<button class="btn btn-primary" id="flow-complete-btn">${icon("check")} Complete</button>
-                   <button class="btn btn-secondary" id="start-focus-btn">${icon("play")} Start</button>`
+                ? `<a class="btn btn-primary" href="#/tasks">${icon("check")} Open task</a>
+                   <button class="btn btn-secondary" id="start-focus-btn">${icon("play")} Start focus</button>`
                 : current.kind === "habit"
-                  ? `<button class="btn btn-primary" id="flow-complete-btn">${icon("check")} Mark done</button>`
+                  ? `<a class="btn btn-primary" href="#/goals">${icon("flag")} Open habits</a>`
                   : current.kind === "event"
                     ? `<a class="btn btn-primary" href="#/calendar">${icon("calendar")} View in calendar</a>`
                     : `<a class="btn btn-primary" href="${current.kind === "deadline" ? "#/goals" : "#/projects"}">${icon("flag")} Open</a>`
@@ -507,10 +506,10 @@ export async function renderHome(view, alive = () => true) {
               ? `<div class="habitchip-row">${scheduledHabits
                   .map(
                     (s) => `
-              <button class="habit-chip ${s.done ? "done" : ""}" data-habit-toggle="${s.hb.id}">
-                ${s.done ? "✓" : "○"} ${escapeHtml(s.hb.title)}
-                ${!s.done && s.streak > 0 ? `<span class="chip-streak">${s.streak}🔥</span>` : ""}
-              </button>`
+              <a class="habit-chip ${s.done ? "done" : ""}" href="#/goals">
+                <span class="habit-chip-title">${s.done ? "✓" : "○"} ${escapeHtml(s.hb.title)}</span>
+                <span class="habit-chip-meta num">🕐 ${s.hb.timeOfDay} · ${s.hb.durationMinutes}m${!s.done && s.streak > 0 ? ` · ${s.streak}🔥` : ""}</span>
+              </a>`
                   )
                   .join("")}</div>`
               : `<div class="empty-state" style="padding:16px 8px;"><p>No habits scheduled today.</p></div>`
@@ -564,70 +563,27 @@ export async function renderHome(view, alive = () => true) {
   `;
 
   // ---------- wiring ----------
+  // Home is read-only: every button navigates, nothing mutates data.
   const advance = () => {
-    slider.index += 1;
+    slider.index = flow.length ? (slider.index + 1) % flow.length : 0;
     renderHome(view, alive);
   };
-
-  view.querySelector("#flow-complete-btn")?.addEventListener("click", async () => {
-    try {
-      if (current.kind === "task") {
-        await taskService.toggleComplete(current.ref.id);
-        toast("Task completed");
-      } else {
-        await habitsSvc.toggleLog(current.ref.id);
-        toast("Nice — habit logged");
-      }
-    } catch (err) {
-      console.error("[home] complete failed", err);
-      toast("Something went wrong", "err");
-      return;
-    }
-    advance();
-  });
 
   view.querySelector("#start-focus-btn")?.addEventListener("click", () => {
     if (current?.ref?.id) sessionStorage.setItem("nexora-focus-task", current.ref.id);
     window.location.hash = "#/focus";
   });
 
-  view.querySelector("#flow-next-btn")?.addEventListener("click", () => {
-    if (current) slider.dismissed.push(flowId(current));
-    advance();
-  });
+  view.querySelector("#flow-next-btn")?.addEventListener("click", advance);
 
-  view.querySelector("#reschedule-btn")?.addEventListener("click", async () => {
-    if (current?.kind !== "task") return;
-    const tomorrow = addDays(today, 1);
-    await taskService.updateTask(current.ref.id, { dueDate: tomorrow });
-    toast(`Moved to ${fmtDate(tomorrow)}`);
-    advance();
-  });
-
-  view.querySelectorAll("[data-habit-toggle]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      try {
-        const nowDone = await habitsSvc.toggleLog(btn.getAttribute("data-habit-toggle"));
-        toast(nowDone ? "Habit logged ✓" : "Undone");
-      } catch (err) {
-        console.error("[home] habit toggle failed", err);
-        toast("Could not update habit", "err");
-      }
-    });
+  view.querySelector("#reschedule-btn")?.addEventListener("click", () => {
+    window.location.hash = "#/tasks";
   });
 
   view.querySelectorAll("[data-attention]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => {
       const a = attention[Number(btn.getAttribute("data-attention"))];
-      if (!a) return;
-      if (a.action === "fix-overdue") {
-        for (const t of overdueTasks) {
-          await taskService.updateTask(t.id, { dueDate: today });
-        }
-        toast(`Rescheduled ${overdueTasks.length} task${overdueTasks.length > 1 ? "s" : ""} to today`);
-        return;
-      }
-      if (a.route) window.location.hash = a.route;
+      if (a?.route) window.location.hash = a.route;
     });
   });
 
@@ -637,31 +593,28 @@ export async function renderHome(view, alive = () => true) {
     })
   );
 
-  view.querySelector("#add-event-btn")?.addEventListener("click", () => {
-    import("../ui/modal.js").then(async ({ openForm }) => {
-      const { EVENT_TYPE_OPTIONS } = await import("../config/eventTypes.js");
-      const values = await openForm({
-        title: "New event",
-        values: { date: today },
-        fields: [
-          { name: "title", label: "Title", required: true, placeholder: "Team stand-up" },
-          { name: "date", label: "Date", type: "date", required: true },
-          { name: "startHour", label: "Starts", type: "time", required: true },
-          { name: "endHour", label: "Ends", type: "time" },
-          { name: "type", label: "Type", type: "select", options: EVENT_TYPE_OPTIONS },
-        ],
-        submitLabel: "Add event",
-      });
-      if (values) {
-        const { createEvent } = await import("../services/eventService.js");
-        const { toFloat } = await import("./calendar.js");
-        const start = toFloat(values.startHour || "09:00");
-        let end = values.endHour ? toFloat(values.endHour) : start + 1;
-        if (end <= start) end = start + 1;
-        await createEvent({ title: values.title, type: values.type, date: values.date, startHour: start, endHour: end });
-        toast("Event added");
-      }
+  view.querySelector("#add-event-btn")?.addEventListener("click", async () => {
+    const { openForm } = await import("../ui/modal.js");
+    const { EVENT_TYPE_OPTIONS } = await import("../config/eventTypes.js");
+    const { createEvent } = await import("../services/eventService.js");
+    const values = await openForm({
+      title: "New event",
+      values: { date: today },
+      fields: [
+        { name: "title", label: "Title", required: true, placeholder: "Team stand-up" },
+        { name: "date", label: "Date", type: "date", required: true },
+        { name: "startHour", label: "Starts", type: "time", required: true },
+        { name: "endHour", label: "Ends", type: "time" },
+        { name: "type", label: "Type", type: "select", options: EVENT_TYPE_OPTIONS },
+      ],
+      submitLabel: "Add event",
     });
+    if (!values) return;
+    const start = toFloat(values.startHour || "09:00");
+    let end = values.endHour ? toFloat(values.endHour) : start + 1;
+    if (end <= start) end = start + 1;
+    await createEvent({ title: values.title, type: values.type, date: values.date, startHour: start, endHour: end });
+    toast("Event added — see it in Today's calendar");
   });
 }
 

@@ -18,6 +18,7 @@ const state = {
 
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+const HOURS_DAY = Array.from({ length: 24 }, (_, i) => i);
 
 function anchorISO() {
   return state.anchor || todayISO();
@@ -74,14 +75,13 @@ export async function renderCalendar(view, alive = () => true) {
         : `${range[0]} – ${range[1]}`;
 
   function shift(dir) {
-    const delta = state.view === "month" ? dir * 30 : dir * (state.view === "day" ? 1 : 7);
-    state.anchor = addDays(anchorISO(), delta);
     if (state.view === "month") {
-      // snap month jumps cleanly
-      const d = fromISO(state.anchor);
-      d.setDate(1);
-      d.setMonth(d.getMonth() + Math.sign(delta));
-      state.anchor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      // Jump exactly one calendar month — never skip a month.
+      const d = fromISO(anchorISO());
+      const nd = new Date(d.getFullYear(), d.getMonth() + dir, 1);
+      state.anchor = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-01`;
+    } else {
+      state.anchor = addDays(anchorISO(), dir * (state.view === "day" ? 1 : 7));
     }
     renderCalendar(view, alive);
   }
@@ -91,7 +91,7 @@ export async function renderCalendar(view, alive = () => true) {
       return `<div class="cal-week" style="grid-template-columns:56px 1fr;">
         <div class="cal-corner"></div>
         <div class="cal-day-head"><div class="dow">${fromISO(iso).toLocaleDateString(undefined, { weekday: "long" })}</div><div class="dom num">${iso.slice(8)}</div></div>
-        ${HOURS.map(
+        ${HOURS_DAY.map(
           (h) => `
           <div class="cal-hour-label">${fmtHour(h).replace(":00", "")}</div>
           <div class="cal-cell">
