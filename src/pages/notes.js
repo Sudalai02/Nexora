@@ -502,7 +502,7 @@ export async function renderNotes(view, alive = () => true) {
   ul{padding-left:22px;} li{margin:4px 0;} p{margin:10px 0;}
   code{background:#f2f0ec;padding:1px 5px;border-radius:3px;font-size:.9em;}
 </style></head><body>
-<div class="brand">Nexora Notes</div>
+<div class="brand">TaskTrack Notes</div>
 <h1>${esc(a.title || "Untitled note")}</h1>
 <div class="meta">${dateStr}</div>
 ${mdLite(a.body)}

@@ -2,6 +2,8 @@
   /* ---- Color: "instrument panel" palette ---- */
   --paper:        #FAFAF9;
   --paper-raised: #FFFFFF;
+  --paper-warm:   #F5F2ED;
+  --paper-2:      #F0EDE8;
   --ink:          #151413;
   --ink-soft:     #34322F;
   --graphite:     #6B6862;
@@ -23,6 +25,8 @@
   --warn-soft:    #FBF2E1;
   --danger:       #B23B34;
   --danger-soft:  #FBEAE8;
+
+  --accent:       #3D5A80;
 
   /* ---- Type ---- */
   --font-display: "Fraunces", Georgia, serif;
@@ -66,4 +70,43 @@
   --topbar-h: 60px;
   --bottomnav-h: 64px;
   --content-max: 1180px;
+}
+
+/* ============ DARK MODE ============ */
+html.dark,
+html.dark body {
+  color-scheme: dark;
+}
+html.dark {
+  --paper:        #151413;
+  --paper-raised: #1E1D1B;
+  --paper-warm:   #242220;
+  --paper-2:      #282624;
+  --ink:          #F0EDE8;
+  --ink-soft:     #D0CCC4;
+  --graphite:     #98958E;
+  --graphite-dim: #706D66;
+  --hairline:     #2C2A27;
+  --hairline-strong: #3D3A36;
+
+  --focus:        #6B8DB5;
+  --focus-soft:   rgba(107,141,181,0.12);
+  --focus-dim:    #4A7299;
+
+  --ember:        #D87840;
+  --ember-soft:   rgba(216,120,64,0.12);
+  --ember-strong: #E09050;
+
+  --good:         #5BA37A;
+  --good-soft:    rgba(91,163,122,0.12);
+  --warn:         #C99A2E;
+  --warn-soft:    rgba(201,154,46,0.12);
+  --danger:       #D45B54;
+  --danger-soft:  rgba(212,91,84,0.12);
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.45);
+
+  --accent:       #6B8DB5;
 }

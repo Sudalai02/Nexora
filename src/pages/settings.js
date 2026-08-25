@@ -6,6 +6,8 @@ import { getProfile, saveProfile, getSettings, saveSettings, DEFAULT_SETTINGS } 
 
 const sections = [
   { id: "account", label: "Account" },
+  { id: "appearance", label: "Appearance" },
+  { id: "screens", label: "Screens" },
   { id: "focus", label: "Focus & Pomodoro" },
   { id: "ai", label: "AI & automation" },
   { id: "notifications", label: "Notifications" },
@@ -15,6 +17,24 @@ const sections = [
 ];
 
 let active = "account";
+
+export function applyTheme(theme) {
+  const root = document.documentElement;
+  root.classList.remove("dark");
+  if (theme === "dark") {
+    root.classList.add("dark");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#151413");
+  } else if (theme === "system") {
+    if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      root.classList.add("dark");
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#151413");
+    } else {
+      document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#FAFAF9");
+    }
+  } else {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#FAFAF9");
+  }
+}
 
 function switchEl(id, on, label, desc) {
   return `
@@ -48,6 +68,45 @@ export async function renderSettings(view, alive = () => true) {
         </div>
       `;
     }
+    if (id === "appearance") {
+      return `
+        <div class="settings-section">
+          <h3>Theme</h3>
+          <div class="sub">Choose how TaskTrack looks on this device.</div>
+          <div class="settings-row">
+            <div class="settings-row-label">Appearance</div>
+            <select data-theme="theme" style="padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;">
+              <option value="light" ${settings.theme === "light" ? "selected" : ""}>Light</option>
+              <option value="dark" ${settings.theme === "dark" ? "selected" : ""}>Dark</option>
+              <option value="system" ${settings.theme === "system" ? "selected" : ""}>System</option>
+            </select>
+          </div>
+        </div>
+      `;
+    }
+    if (id === "screens") {
+      const s = settings.screens || {};
+      const screenNames = [
+        ["home", "Home"],
+        ["tasks", "Tasks"],
+        ["projects", "Projects"],
+        ["goals", "Goals"],
+        ["calendar", "Calendar"],
+        ["focus", "Focus"],
+        ["notes", "Notes"],
+        ["inbox", "Inbox"],
+        ["insights", "Insights"],
+        ["assistant", "AI Assistant"],
+        ["recycleBin", "Recycle Bin"],
+      ];
+      return `
+        <div class="settings-section">
+          <h3>Visible Screens</h3>
+          <div class="sub">Choose which screens appear in the navigation. Disabled screens are hidden from the sidebar and bottom bar.</div>
+          ${screenNames.map(([key, label]) => switchEl(`screen-${key}`, s[key] !== false, label)).join("")}
+        </div>
+      `;
+    }
     if (id === "focus") {
       const p = settings.pomodoro;
       return `
@@ -72,7 +131,7 @@ export async function renderSettings(view, alive = () => true) {
         </div>
         <div class="settings-section">
           <h3>AI provider</h3>
-          <div class="sub">Nexora runs entirely on your device: it uses a local model through Ollama when one is available, and silently falls back to built-in smart rules otherwise.</div>
+          <div class="sub">TaskTrack runs entirely on your device: it uses a local model through Ollama when one is available, and silently falls back to built-in smart rules otherwise.</div>
           <div class="settings-row">
             <div class="settings-row-label">Engine preference</div>
             <select data-ai="provider" style="padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;">
@@ -93,7 +152,7 @@ export async function renderSettings(view, alive = () => true) {
             <button class="btn btn-primary btn-sm" id="save-ai-btn">Save AI settings</button>
           </div>
           <div id="conn-status" class="conn-status" style="margin-top:12px;"></div>
-          <div class="form-hint" style="margin-top:8px;">No local model yet? Install from ollama.com then run <code>ollama pull llama3.2</code>. If Nexora runs on a different port/origin, start Ollama with <code>OLLAMA_ORIGINS=*</code>.</div>
+          <div class="form-hint" style="margin-top:8px;">No local model yet? Install from ollama.com then run <code>ollama pull llama3.2</code>. If TaskTrack runs on a different port/origin, start Ollama with <code>OLLAMA_ORIGINS=*</code>.</div>
         </div>
       `;
     }
@@ -179,10 +238,25 @@ export async function renderSettings(view, alive = () => true) {
           const notifications = { ...DEFAULT_SETTINGS.notifications, ...settings.notifications, [map[key]]: on };
           settings.notifications = notifications;
           await saveSettings({ notifications });
+        } else if (key.startsWith("screen-")) {
+          const screenKey = key.replace("screen-", "");
+          const screens = { ...DEFAULT_SETTINGS.screens, ...settings.screens, [screenKey]: on };
+          settings.screens = screens;
+          await saveSettings({ screens });
+          toast(on ? `${screenKey} visible` : `${screenKey} hidden`);
+          window.dispatchEvent(new CustomEvent("screens-changed"));
         }
         toast(on ? "Enabled" : "Disabled");
       })
     );
+
+    // Theme select
+    view.querySelector('[data-theme="theme"]')?.addEventListener("change", async (e) => {
+      settings.theme = e.target.value;
+      await saveSettings({ theme: e.target.value });
+      applyTheme(e.target.value);
+      toast("Theme updated");
+    });
 
     // Pomodoro save
     view.querySelector("#save-pomo")?.addEventListener("click", async () => {

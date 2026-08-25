@@ -1,5 +1,5 @@
 // ============================================================
-// RECYCLE BIN — every deletion in Nexora lands here first.
+// RECYCLE BIN — every deletion in TaskTrack lands here first.
 //
 // Items are kept for 15 days (countdown shown per row), then
 // permanently purged with automatic relationship repair.

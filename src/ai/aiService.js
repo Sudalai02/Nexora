@@ -1,5 +1,5 @@
 // ============================================================
-// AI SERVICE — provider abstraction for Nexora's intelligence.
+// AI SERVICE — provider abstraction for TaskTrack's intelligence.
 //
 // Two engines behind one API:
 //   • "ollama"    — a local model via Ollama (free, private)
@@ -231,7 +231,7 @@ export async function recommendNextAction() {
           {
             role: "system",
             content:
-              "You are Nexora's planning engine. Pick the single best task for the user to do RIGHT NOW given deadlines, priorities, effort and momentum. Reply ONLY with JSON: {\"taskId\": \"<id from list>\", \"reason\": \"one short sentence\"}",
+              "You are TaskTrack's planning engine. Pick the single best task for the user to do RIGHT NOW given deadlines, priorities, effort and momentum. Reply ONLY with JSON: {\"taskId\": \"<id from list>\", \"reason\": \"one short sentence\"}",
           },
           { role: "user", content: ctxToPrompt(ctx) },
         ],
@@ -284,7 +284,7 @@ export async function breakDownGoal({ title, description = "", targetDate = "" }
           {
             role: "system",
             content:
-              'You are Nexora\'s goal planner. Break the user\'s goal into 3-5 sequential milestones. For each milestone give 2-3 concrete first-batch tasks. Reply ONLY with JSON: {"milestones":[{"label":"Milestone name","tasks":["Task one","Task two"]}]}',
+              'You are TaskTrack\'s goal planner. Break the user\'s goal into 3-5 sequential milestones. For each milestone give 2-3 concrete first-batch tasks. Reply ONLY with JSON: {"milestones":[{"label":"Milestone name","tasks":["Task one","Task two"]}]}',
           },
           {
             role: "user",
@@ -387,7 +387,7 @@ export async function chatReply(history, userText) {
     {
       role: "system",
       content:
-        "You are Nexora, a calm, sharp productivity copilot embedded in the user's personal OS. You KNOW their live data (given below). Be concise and concrete — reference real task/project/goal names. Use markdown bold sparingly. Never invent tasks that are not in the data. If asked to change something, describe exactly what you would change.\n\n--- LIVE USER DATA ---\n" +
+        "You are TaskTrack, a calm, sharp productivity copilot embedded in the user's personal OS. You KNOW their live data (given below). Be concise and concrete — reference real task/project/goal names. Use markdown bold sparingly. Never invent tasks that are not in the data. If asked to change something, describe exactly what you would change.\n\n--- LIVE USER DATA ---\n" +
         ctxToPrompt(ctx),
     },
     ...history.slice(-8).map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text })),

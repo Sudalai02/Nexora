@@ -14,13 +14,14 @@ import { renderRecycleBin } from "./pages/recycleBin.js";
 import { renderMore } from "./pages/more.js";
 import { seedIfNeeded } from "./store/seed.js";
 import * as db from "./store/db.js";
-import { getProfile } from "./services/settingsService.js";
+import { getProfile, getSettings } from "./services/settingsService.js";
 import { addItem } from "./services/inboxService.js";
 import * as recycleSvc from "./services/recycleService.js";
 import * as notificationSvc from "./services/notificationService.js";
 import { openSearch } from "./ui/searchOverlay.js";
 import { initBellPanel } from "./ui/bellPanel.js";
 import { toast } from "./ui/toast.js";
+import { applyTheme } from "./pages/settings.js";
 
 registerRoute("home", renderHome);
 registerRoute("tasks", renderTasks);
@@ -42,6 +43,23 @@ async function boot() {
   await updateUserChip();
   initRouter();
   initBellPanel();
+
+  // Apply theme from settings
+  const settings = await getSettings();
+  applyTheme(settings.theme || "light");
+  applyScreenVisibility(settings.screens || {});
+
+  // Listen for system theme changes when using "system" mode
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", async () => {
+    const s = await getSettings();
+    if (s.theme === "system") applyTheme("system");
+  });
+
+  // Listen for screen visibility changes from settings page
+  window.addEventListener("screens-changed", async () => {
+    const s = await getSettings();
+    applyScreenVisibility(s.screens || {});
+  });
 
   // 15-day retention sweep — safe to run every start.
   recycleSvc.purgeExpired().catch((err) => console.warn("[recycle] purge failed", err));
@@ -72,6 +90,24 @@ async function updateUserChip() {
   chip.querySelector(".avatar").textContent = initial;
   chip.querySelector(".user-chip-name").textContent = profile.name || "You";
   chip.querySelector(".user-chip-meta").textContent = profile.workspace || "Personal workspace";
+}
+
+function applyScreenVisibility(screens) {
+  // Hide/show sidebar nav items
+  document.querySelectorAll(".sidebar-nav .nav-item").forEach((el) => {
+    const route = el.dataset.route;
+    if (route && route in screens) {
+      el.style.display = screens[route] ? "" : "none";
+    }
+  });
+  // Hide/show sheet nav items
+  document.querySelectorAll(".sheet-grid .sheet-item").forEach((el) => {
+    const href = el.getAttribute("href") || "";
+    const route = href.replace("#/", "");
+    if (route && route in screens) {
+      el.style.display = screens[route] ? "" : "none";
+    }
+  });
 }
 
 // ===================== QUICK ADD MODAL =====================
@@ -147,7 +183,7 @@ boot()
     if (root) {
       root.innerHTML = `
         <div class="card error-card">
-          <h3>Nexora couldn't start</h3>
+          <h3>TaskTrack couldn't start</h3>
           <p>${String(err?.message || err)}</p>
           <div style="display:flex; gap:10px; justify-content:center; margin-top:14px;">
             <button class="btn btn-primary btn-sm" onclick="location.reload()">Reload</button>

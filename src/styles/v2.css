@@ -1454,8 +1454,58 @@
   .view { padding-bottom: calc(var(--bottomnav-h) + var(--sp-10)); }
 
   /* --- Print-friendly overrides removed for screen --- */
-  @media print { .bottom-nav { display: none !important; } }
 }
+
+/* ============ DARK MODE — HARDCODED COLOR OVERRIDES ============ */
+html.dark .home-hero {
+  background: linear-gradient(150deg, #1A1916 0%, #121110 60%, #1A1612 100%);
+}
+html.dark .home-hero::after {
+  background: radial-gradient(circle, rgba(216,120,64,0.2) 0%, transparent 70%);
+}
+html.dark .ai-insight-banner {
+  background: linear-gradient(140deg, #1A1916 0%, #1E1C18 100%);
+  border-color: var(--hairline);
+}
+html.dark .bell-item.unread { background: #1E1D1B; }
+html.dark .now-card {
+  background: linear-gradient(155deg, #1A1916 0%, #121110 55%, #1A1612 100%);
+}
+html.dark .focus-ring {
+  background: conic-gradient(var(--focus) 0deg 245deg, var(--hairline) 245deg 360deg);
+}
+html.dark .focus-ring::before {
+  background: var(--paper-raised);
+}
+html.dark .modal-backdrop {
+  background: rgba(0,0,0,0.5);
+}
+html.dark .sheet-item .nav-icon {
+  background: var(--hairline);
+}
+html.dark .score-ring {
+  background:
+    radial-gradient(closest-side, var(--paper-raised) 78%, transparent 79% 100%),
+    conic-gradient(var(--focus) calc(var(--p) * 1%), var(--hairline) 0);
+}
+html.dark .score-ring.good {
+  background: radial-gradient(closest-side, var(--paper-raised) 78%, transparent 79% 100%), conic-gradient(var(--good) calc(var(--p) * 1%), var(--hairline) 0);
+}
+html.dark .score-ring.warn {
+  background: radial-gradient(closest-side, var(--paper-raised) 78%, transparent 79% 100%), conic-gradient(var(--warn) calc(var(--p) * 1%), var(--hairline) 0);
+}
+html.dark .score-ring.bad {
+  background: radial-gradient(closest-side, var(--paper-raised) 78%, transparent 79% 100%), conic-gradient(var(--danger) calc(var(--p) * 1%), var(--hairline) 0);
+}
+html.dark .reader-overlay { background: var(--paper); }
+html.dark .search-backdrop { background: rgba(0,0,0,0.55); }
+html.dark .toast { background: var(--ink); color: var(--paper); }
+html.dark .bell-clear-bg { background: var(--danger); }
+html.dark .settings-nav-item.active { background: var(--hairline); }
+html.dark .search-result.active { background: var(--focus-soft); }
+html.dark .search-modal { background: var(--paper-raised); border-color: var(--hairline); }
+  @media print { .bottom-nav { display: none !important; } }
+
 
 /* Narrow phones (320-360px) */
 @media (max-width: 360px) {

@@ -1,7 +1,7 @@
 {
   "name": "nexora",
   "version": "0.1.0",
-  "description": "Nexora — Personal Productivity OS",
+  "description": "TaskTrack — Personal Productivity OS",
   "private": true,
   "type": "module",
   "scripts": {

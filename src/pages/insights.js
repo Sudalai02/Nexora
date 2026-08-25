@@ -579,6 +579,36 @@ export async function renderInsights(view, alive = () => true) {
     btn.addEventListener("click", () => { location.hash = "#/goals"; });
   });
   view.querySelectorAll("[data-action='view-habit']").forEach((btn) => {
-    btn.addEventListener("click", () => { location.hash = "#/habits"; });
+    btn.addEventListener("click", () => { location.hash = "#/focus"; });
+  });
+
+  // See all risks button
+  view.querySelectorAll(".attention-see-all").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const list = view.querySelector(".attention-list");
+      if (!list) return;
+      const hidden = list.querySelectorAll(".attention-item");
+      hidden.forEach((el) => el.style.display = "");
+      btn.textContent = "All risks shown";
+      btn.disabled = true;
+      btn.style.opacity = "0.5";
+    });
+  });
+
+  // Show all risk items initially (collapse to 4)
+  view.querySelectorAll(".attention-item").forEach((el, i) => {
+    if (i >= 4) el.style.display = "none";
+  });
+
+  // AI actions: Schedule It and View Details
+  view.querySelectorAll("[data-action='schedule-ai']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      location.hash = "#/calendar";
+    });
+  });
+  view.querySelectorAll("[data-action='details-ai']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      location.hash = "#/insights";
+    });
   });
 }

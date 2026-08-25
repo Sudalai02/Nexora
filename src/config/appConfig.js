@@ -4,7 +4,7 @@
 // the final integration step (see FIREBASE placeholder below).
 // ============================================================
 
-export const APP_NAME = "Nexora";
+export const APP_NAME = "TaskTrack";
 
 export const STORAGE_KEYS = {
   swCacheVersion: "nexora-cache-v3",
@@ -30,6 +30,20 @@ export const DEFAULT_SETTINGS = {
     model: "", // empty = first available local model
   },
   autoSchedule: false,
+  screens: {
+    home: true,
+    tasks: true,
+    projects: true,
+    goals: true,
+    calendar: true,
+    focus: true,
+    notes: true,
+    inbox: true,
+    insights: true,
+    assistant: true,
+    recycleBin: true,
+  },
+  theme: "light", // "light" | "dark" | "system"
 };
 
 // ------------------------------------------------------------

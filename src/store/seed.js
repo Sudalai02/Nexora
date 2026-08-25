@@ -56,7 +56,7 @@ export async function seedIfNeeded() {
       id: "g1",
       title: "Launch the productivity app",
       description:
-        "Ship a usable MVP of Nexora to first users within 30 days, focused on the core planning loop.",
+        "Ship a usable MVP of TaskTrack to first users within 30 days, focused on the core planning loop.",
       category: "Career",
       status: "Active",
       priority: "High",
