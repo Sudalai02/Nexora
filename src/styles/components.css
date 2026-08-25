@@ -89,6 +89,8 @@
   border: 1px solid var(--hairline);
   border-radius: var(--r-lg);
   padding: var(--sp-5);
+  max-width: 100%;
+  overflow: hidden;
 }
 .card-flush { padding: 0; overflow: hidden; }
 
@@ -194,6 +196,7 @@
   padding-top: 12vh;
   z-index: 100;
   backdrop-filter: blur(2px);
+  overflow: hidden;
 }
 .modal-backdrop.open { display: flex; }
 
@@ -234,6 +237,8 @@
   padding: var(--sp-3) var(--sp-5) calc(var(--sp-8) + env(safe-area-inset-bottom));
   z-index: 101;
   display: none;
+  max-width: 100vw;
+  overflow: hidden;
 }
 .modal-backdrop.open .sheet { display: block; }
 .sheet-handle {

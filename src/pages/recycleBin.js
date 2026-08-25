@@ -49,7 +49,7 @@ export async function renderRecycleBin(view, alive = () => true) {
         <div class="eyebrow">Kept ${RETENTION_DAYS} days · then permanently removed</div>
         <div class="page-title-row">
           <h1>Recycle Bin</h1>
-          <div style="display:flex; gap:8px;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn btn-primary btn-sm" id="restore-selected-btn" ${state.selected.size ? "" : "disabled"}>
               ${icon("check")} Restore ${state.selected.size ? `(${state.selected.size})` : ""}
             </button>

@@ -3,8 +3,203 @@
 // Range stats, per-day series, productive hours, habit consistency.
 // ============================================================
 
-import { todayISO, addDays } from "../utils/dates.js";
+import { todayISO, addDays, diffDays, fromISO } from "../utils/dates.js";
 import * as db from "../store/db.js";
+
+// ---- Goal progress helper (shared) ----
+async function computeGoalProgress(goals, projects, tasks) {
+  const doneSet = ["Completed", "Cancelled"];
+  const projProg = {};
+  for (const p of projects) projProg[p.id] = { done: 0, total: 0 };
+  for (const t of tasks) {
+    if (t.projectId && projProg[t.projectId]) {
+      projProg[t.projectId].total += 1;
+      if (doneSet.includes(t.status)) projProg[t.projectId].done += 1;
+    }
+  }
+  const map = {};
+  for (const g of goals) {
+    const msTotal = g.milestones?.length || 0;
+    const msDone = (g.milestones || []).filter((m) => m.done).length;
+    const linked = projects.filter((p) => p.goalId === g.id);
+    const directTasks = tasks.filter((t) => t.goalId === g.id);
+    let done = 0, total = 0;
+    for (const p of linked) { done += projProg[p.id]?.done || 0; total += projProg[p.id]?.total || 0; }
+    for (const t of directTasks) { total += 1; if (doneSet.includes(t.status)) done += 1; }
+    const taskPct = total > 0 ? Math.round((done / total) * 100) : null;
+    let pct = null;
+    if (msTotal && taskPct !== null) pct = Math.round(msDone * 0.4 + taskPct * 0.6);
+    else if (msTotal) pct = Math.round((msDone / msTotal) * 100);
+    else if (taskPct !== null) pct = taskPct;
+    map[g.id] = { pct: g.status === "Completed" ? 100 : pct, msDone, msTotal, taskPct, taskDone: done, taskTotal: total };
+  }
+  return map;
+}
+
+// ---- helpers ----
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ---- Today's focus (fast — queries only today) ----
+export async function todayFocus() {
+  const today = todayISO();
+  const sessions = await db.getAll("focusSessions");
+  let minutes = 0, deepMinutes = 0, count = 0;
+  const hourBuckets = new Array(24).fill(0);
+  for (const s of sessions) {
+    if (s.type !== "focus") continue;
+    if (s.startedAt.slice(0, 10) !== today) continue;
+    const mins = Math.round((s.durationSeconds || 0) / 60);
+    minutes += mins;
+    count++;
+    if ((s.plannedMinutes || 0) >= 45) deepMinutes += mins;
+    const h = new Date(s.startedAt).getHours();
+    hourBuckets[h] += mins;
+  }
+  return { minutes, deepMinutes, sessionCount: count, hourBuckets };
+}
+
+// ---- Trend data points with period-appropriate granularity ----
+const PERIOD_DAYS = { today: 1, week: 7, month: 30, "3m": 90 };
+
+export async function trendData(period) {
+  const days = PERIOD_DAYS[period] || 7;
+  const stats = await rangeStats(days);
+  const pts = [];
+
+  if (period === "today") {
+    for (let h = 0; h < 24; h++) {
+      if (stats.hourBuckets[h]) pts.push({ label: `${h}:00`, value: stats.hourBuckets[h] });
+    }
+  } else if (period === "week") {
+    for (const d of stats.perDay) {
+      const dt = fromISO(d.date);
+      pts.push({ label: dt.toLocaleDateString(undefined, { weekday: "short" }), value: d.completed * 30 + d.focusMin });
+    }
+  } else if (period === "month") {
+    for (let i = 0; i < stats.perDay.length; i += 7) {
+      const chunk = stats.perDay.slice(i, i + 7);
+      const v = chunk.reduce((a, d) => a + d.completed * 30 + d.focusMin, 0);
+      pts.push({ label: `Wk ${Math.floor(i / 7) + 1}`, value: v });
+    }
+  } else {
+    for (let i = 0; i < stats.perDay.length; i += 14) {
+      const chunk = stats.perDay.slice(i, i + 14);
+      const v = chunk.reduce((a, d) => a + d.completed * 30 + d.focusMin, 0);
+      const start = chunk[0]?.date?.slice(5) || "";
+      pts.push({ label: start, value: v });
+    }
+  }
+  return { pts, stats };
+}
+
+// ---- Risks (ALWAYS current, not period-scoped) ----
+export async function currentRisks() {
+  const today = todayISO();
+  const [tasks, goals, projects, habits] = await Promise.all([
+    db.getAll("tasks"), db.getAll("goals"), db.getAll("projects"), db.getAll("habits"),
+  ]);
+  const OPEN = ["Todo", "In Progress", "Blocked"];
+  const risks = [];
+
+  // Overdue tasks
+  const overdue = tasks.filter((t) => t.dueDate && t.dueDate < today && OPEN.includes(t.status));
+  for (const t of overdue.slice(0, 3)) {
+    const daysOver = diffDays(t.dueDate, today);
+    risks.push({ type: "task", severity: "red", title: t.title, detail: `${Math.abs(daysOver)} day${Math.abs(daysOver) !== 1 ? "s" : ""} overdue`, taskId: t.id });
+  }
+
+  // Stalled goals (no progress in 5+ days)
+  const goalProg = await computeGoalProgress(goals, projects, tasks);
+  for (const g of goals.filter((g) => g.status !== "Completed" && g.status !== "Cancelled")) {
+    const p = goalProg[g.id]?.pct ?? 0;
+    if (p > 0 && p < 30) {
+      risks.push({ type: "goal", severity: "orange", title: g.title, detail: `At ${p}% — needs attention`, goalId: g.id });
+    }
+  }
+
+  // Weak habits (below 50% consistency)
+  const cons = await habitConsistency(7);
+  for (const h of cons.filter((h) => h.pct < 50 && h.scheduled >= 3)) {
+    risks.push({ type: "habit", severity: "yellow", title: `${h.habit.title} habit`, detail: `${h.pct}% consistency this week`, habitId: h.habit.id });
+  }
+
+  return risks;
+}
+
+// ---- Streaks per habit ----
+export async function computeStreaks() {
+  const habits = (await db.getAll("habits")).filter((h) => !h.archived);
+  const logs = await db.getAll("habitLogs");
+  const doneSet = new Set(logs.filter((l) => l.done).map((l) => l.id));
+  const today = todayISO();
+
+  return habits.map((h) => {
+    let streak = 0;
+    for (let d = 0; d <= 365; d++) {
+      const dt = new Date(`${today}T00:00:00`);
+      dt.setDate(dt.getDate() - d);
+      const wd = dt.getDay();
+      if (!(h.weekdays || []).includes(wd)) continue; // skip non-scheduled days
+      const key = `${h.id}:${dt.toISOString().slice(0, 10)}`;
+      if (doneSet.has(key)) { streak++; } else { break; }
+    }
+    return { habit: h, streak };
+  });
+}
+
+// ---- Goal completion forecast ----
+export async function forecastGoal(goal, goalProg, daysActive) {
+  const pct = goalProg?.pct ?? 0;
+  const remaining = 100 - pct;
+  if (remaining <= 0) return { probability: 100, estDate: null };
+  if (daysActive <= 0) return { probability: null, estDate: null };
+  const velocity = pct / daysActive;
+  if (velocity <= 0) return { probability: 0, estDate: null };
+  const daysNeeded = remaining / velocity;
+  const estDate = addDays(todayISO(), Math.ceil(daysNeeded));
+  // Probability: how likely to finish given velocity (capped at 95%)
+  const probability = clamp(Math.round(pct / Math.max(daysNeeded, 1) * 12), 5, 95);
+  return { probability, estDate };
+}
+
+// ---- AI insight text for a given period ----
+export function aiInsightForPeriod(stats, habitsCons, risks, score) {
+  const lines = [];
+  const completedRate = stats.completionRate ?? 0;
+  const focusH = Math.round(stats.focusMinutes / 60);
+
+  // Working
+  if (completedRate >= 70) lines.push({ icon: "🟢", label: "Working", text: `You completed ${completedRate}% of due tasks this period. Strong execution.` });
+  else if (stats.tasksCompleted >= 5) lines.push({ icon: "🟢", label: "Working", text: `${stats.tasksCompleted} tasks completed — solid volume for this period.` });
+
+  // Hurting
+  const overdueCount = risks.filter((r) => r.type === "task").length;
+  if (overdueCount >= 3) lines.push({ icon: "🔴", label: "Hurting", text: `${overdueCount} overdue tasks — ${risks.filter((r) => r.type === "task" && r.detail.includes("60")).length || overdueCount} are long-standing.` });
+  else if (overdueCount) lines.push({ icon: "🔴", label: "Hurting", text: `${overdueCount} overdue task${overdueCount !== 1 ? "s" : ""} need rescheduling or deletion.` });
+
+  // Attention
+  const stalledGoals = risks.filter((r) => r.type === "goal");
+  if (stalledGoals.length) lines.push({ icon: "🟡", label: "Attention", text: `"${stalledGoals[0].title}" has stalled — consider a focused sprint or explicit pause.` });
+  else if (habitsCons.length && habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length < 60)
+    lines.push({ icon: "🟡", label: "Attention", text: `Habit consistency is below 60%. Small adjustments beat willpower.` });
+
+  // Recommendation
+  if (focusH < 7) lines.push({ icon: "💡", label: "Recommendation", text: `Only ${focusH}h of focus this period. Book one 90-minute block tomorrow morning.` });
+  else lines.push({ icon: "💡", label: "Recommendation", text: `Focus volume is solid (${focusH}h). Protect your best hours from meetings.` });
+
+  // Next step
+  if (overdueCount) lines.push({ icon: "🚀", label: "Best next step", text: `Clear the ${overdueCount} overdue item${overdueCount !== 1 ? "s" : ""} before adding new work.` });
+  else if (stalledGoals.length) lines.push({ icon: "🚀", label: "Best next step", text: `Spend 30 minutes on "${stalledGoals[0].title}" to rebuild momentum.` });
+  else lines.push({ icon: "🚀", label: "Best next step", text: `Raise your focus target by 10% — you have capacity.` });
+
+  return lines;
+}
+
+// ---- Schedule score estimate ----
+export function scheduleScore(stats) {
+  if (stats.completionRate == null) return 50;
+  return clamp(Math.round(stats.completionRate * 0.6 + (stats.sessionCount > 0 ? 40 : 20)), 0, 100);
+}
 
 export async function rangeStats(days, offset = 0) {
   const today = todayISO();

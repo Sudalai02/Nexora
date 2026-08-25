@@ -597,8 +597,7 @@ export async function renderAssistant(view, alive = () => true) {
           const aw = a.toLowerCase().startsWith(q) ? 0 : 1;
           const bw = b.toLowerCase().startsWith(q) ? 0 : 1;
           return aw - bw || a.localeCompare(b);
-        })
-        .slice(0, 8);
+        });
       listEl.innerHTML = matches.length
         ? matches.map((p) => `<button type="button" class="prompt-option" data-prompt="${p.replace(/"/g, "&quot;")}">${p}</button>`).join("")
         : `<div class="prompt-empty">No prompts match “${q}” — just send your own question.</div>`;

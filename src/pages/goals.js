@@ -17,6 +17,7 @@ import * as goalService from "../services/goalService.js";
 import * as projectService from "../services/projectService.js";
 import * as taskService from "../services/taskService.js";
 import * as habits from "../services/habitService.js";
+import * as db from "../store/db.js";
 import * as recycleService from "../services/recycleService.js";
 import { runGoalPlanner } from "../ui/goalPlanner.js";
 import { addDays, todayISO, weekdayOf } from "../utils/dates.js";
@@ -109,7 +110,7 @@ export async function renderGoals(view, alive = () => true) {
     goalService.allGoals(),
     projectService.allProjects(),
     taskService.allTasks(),
-    habits.allHabits(),
+    db.getAll("habits"),
   ]);
   if (!alive()) return;
   const prog = await goalService.progressMap(goals, projects, tasks);

@@ -54,10 +54,10 @@ export async function renderSettings(view, alive = () => true) {
         <div class="settings-section">
           <h3>Pomodoro</h3>
           <div class="sub">Defaults used by the Focus timer.</div>
-          <div class="settings-row"><div class="settings-row-label">Focus length (min)</div><input type="number" min="5" max="120" step="5" value="${p.focusMinutes}" data-pomo="focusMinutes" style="width:76px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
-          <div class="settings-row"><div class="settings-row-label">Short break (min)</div><input type="number" min="1" max="30" value="${p.shortBreakMinutes}" data-pomo="shortBreakMinutes" style="width:76px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
-          <div class="settings-row"><div class="settings-row-label">Long break (min)</div><input type="number" min="5" max="60" value="${p.longBreakMinutes}" data-pomo="longBreakMinutes" style="width:76px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
-          <div class="settings-row"><div class="settings-row-label">Sessions before long break</div><input type="number" min="2" max="8" value="${p.sessionsBeforeLongBreak}" data-pomo="sessionsBeforeLongBreak" style="width:76px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
+          <div class="settings-row"><div class="settings-row-label">Focus length (min)</div><input type="number" min="5" max="120" step="5" value="${p.focusMinutes}" data-pomo="focusMinutes" style="width:76px; max-width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
+          <div class="settings-row"><div class="settings-row-label">Short break (min)</div><input type="number" min="1" max="30" value="${p.shortBreakMinutes}" data-pomo="shortBreakMinutes" style="width:76px; max-width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
+          <div class="settings-row"><div class="settings-row-label">Long break (min)</div><input type="number" min="5" max="60" value="${p.longBreakMinutes}" data-pomo="longBreakMinutes" style="width:76px; max-width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
+          <div class="settings-row"><div class="settings-row-label">Sessions before long break</div><input type="number" min="2" max="8" value="${p.sessionsBeforeLongBreak}" data-pomo="sessionsBeforeLongBreak" style="width:76px; max-width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" /></div>
           <button class="btn btn-primary btn-sm" id="save-pomo" style="margin-top:12px;">Save focus settings</button>
         </div>
       `;
@@ -82,11 +82,11 @@ export async function renderSettings(view, alive = () => true) {
           </div>
           <div class="settings-row">
             <div class="settings-row-label">Ollama URL</div>
-            <input type="text" data-ai="ollamaUrl" value="${ai.ollamaUrl}" style="width:230px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" />
+            <input type="text" data-ai="ollamaUrl" value="${ai.ollamaUrl}" style="max-width:230px; width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" />
           </div>
           <div class="settings-row">
             <div class="settings-row-label">Model</div>
-            <input type="text" data-ai="model" value="${ai.model}" placeholder="(first available)" style="width:230px; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" />
+            <input type="text" data-ai="model" value="${ai.model}" placeholder="(first available)" style="max-width:230px; width:100%; padding:6px 8px; border:1px solid var(--hairline-strong); border-radius:8px;" />
           </div>
           <div style="display:flex; gap:10px; margin-top:14px; align-items:center; flex-wrap:wrap;">
             <button class="btn btn-secondary btn-sm" id="check-ai-btn">Check connection</button>

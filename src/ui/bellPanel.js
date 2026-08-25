@@ -54,6 +54,7 @@ function itemHTML(a) {
         </span>
         ${a.read ? "" : '<span class="bell-unread-dot"></span>'}
       </button>
+      <button class="bell-clear-btn" data-clear-alert="${a.id}" aria-label="Clear notification">${icon("x")}</button>
     </div>
   `;
 }
@@ -115,6 +116,20 @@ async function renderPanel() {
       if (route) window.location.hash = route;
     });
     attachSwipeToClear(item);
+  });
+
+  panel.querySelectorAll("[data-clear-alert]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const wrap = btn.closest(".bell-item-wrap");
+      if (wrap) {
+        wrap.style.transition = "opacity 0.2s ease, max-height 0.2s ease";
+        wrap.style.opacity = "0";
+        wrap.style.maxHeight = "0";
+        wrap.style.overflow = "hidden";
+      }
+      await notif.removeAlert(btn.dataset.clearAlert);
+    });
   });
 
   // ---- swipe-to-clear: drag a notification left to dismiss it ----

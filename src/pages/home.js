@@ -369,7 +369,7 @@ export async function renderHome(view, alive = () => true) {
             }
           </div>
           <div class="flow-nav-v2">
-            <span style="display:flex; gap:6px;">
+            <span style="display:flex; gap:6px; flex-wrap:wrap;">
               <button class="btn btn-sm btn-secondary" id="reschedule-btn" ${current.kind !== "task" ? "hidden" : ""}>Reschedule</button>
               <button class="btn btn-sm btn-ghost" id="flow-next-btn">Next ›</button>
             </span>

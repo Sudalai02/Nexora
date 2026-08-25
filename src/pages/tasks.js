@@ -17,7 +17,7 @@ import * as projectService from "../services/projectService.js";
 import * as goalService from "../services/goalService.js";
 
 const PAGE_SIZE = 10;
-const ALL_STATUSES = ["Todo", "In Progress", "Blocked", "Completed", "Cancelled"];
+const ALL_STATUSES = ["Todo", "In Progress", "Blocked", "Overdue", "Completed", "Cancelled"];
 
 // Filter state survives navigation within the session.
 const state = {
@@ -148,7 +148,14 @@ export async function renderTasks(view, alive = () => true) {
       );
     }
 
-    if (state.status !== "all") list = list.filter((t) => t.status === state.status);
+    if (state.status !== "all") {
+      if (state.status === "Overdue") {
+        const today = todayISO();
+        list = list.filter((t) => t.dueDate && t.dueDate < today && !["Completed", "Cancelled"].includes(t.status));
+      } else {
+        list = list.filter((t) => t.status === state.status);
+      }
+    }
     if (state.priority !== "all") list = list.filter((t) => t.priority === state.priority);
 
     const bounds = dateRangeBounds();
