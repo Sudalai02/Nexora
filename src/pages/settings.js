@@ -2,7 +2,6 @@ import { openForm, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
 import * as db from "../store/db.js";
 import { getProfile, saveProfile, getSettings, saveSettings, DEFAULT_SETTINGS } from "../services/settingsService.js";
-import { isFirebaseReady, signOut } from "../services/firebaseService.js";
 
 const sections = [
   { id: "account", label: "Account" },
@@ -349,12 +348,6 @@ export async function renderSettings(view, alive = () => true) {
         confirmLabel: "Log out",
       });
       if (!ok) return;
-      // Sign out from Firebase if configured
-      if (isFirebaseReady()) {
-        try {
-          await signOut();
-        } catch (_) {}
-      }
       toast("Logged out");
       window.location.hash = "#/login";
     });

@@ -12,7 +12,6 @@ import { renderAssistant } from "./pages/assistant.js";
 import { renderSettings } from "./pages/settings.js";
 import { renderRecycleBin } from "./pages/recycleBin.js";
 import { renderMore } from "./pages/more.js";
-import { renderLogin } from "./pages/login.js";
 import { seedIfNeeded } from "./store/seed.js";
 import * as db from "./store/db.js";
 import { getProfile, getSettings } from "./services/settingsService.js";
@@ -23,15 +22,6 @@ import { openSearch } from "./ui/searchOverlay.js";
 import { initBellPanel } from "./ui/bellPanel.js";
 import { toast } from "./ui/toast.js";
 import { applyTheme } from "./pages/settings.js";
-import {
-  isFirebaseReady,
-  initFirebase,
-  onAuthChange,
-  getUser,
-  syncToFirestore,
-  syncFromFirestore,
-  signOut,
-} from "./services/firebaseService.js";
 
 // ===================== ROUTES =====================
 registerRoute("home", renderHome);
@@ -47,53 +37,10 @@ registerRoute("assistant", renderAssistant);
 registerRoute("settings", renderSettings);
 registerRoute("recycleBin", renderRecycleBin);
 registerRoute("more", renderMore);
-registerRoute("login", renderLogin);
-
-// Protected routes — require auth when Firebase is configured
-const PROTECTED_ROUTES = new Set([
-  "home", "tasks", "projects", "goals", "calendar",
-  "focus", "notes", "inbox", "insights", "assistant",
-  "settings", "recycleBin", "more",
-]);
 
 // ===================== BOOT =====================
 async function boot() {
-  // Initialize Firebase if configured
-  if (isFirebaseReady()) {
-    initFirebase();
-
-    // Wait for auth state (max 10s for Google popup)
-    const user = await new Promise((resolve) => {
-      const timeout = setTimeout(() => resolve(null), 10000);
-      const unsub = onAuthChange((u) => {
-        clearTimeout(timeout);
-        unsub();
-        resolve(u);
-      });
-    });
-
-    if (!user) {
-      // Not logged in — show login page
-      window.location.hash = "#/login";
-      initRouter();
-      initBellPanel();
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("sw.js").catch(() => {});
-      }
-      return;
-    }
-
-    // Logged in — sync data from Firestore, then seed if needed
-    await seedIfNeeded();
-    try {
-      await syncFromFirestore(db);
-    } catch (err) {
-      console.warn("[firebase] sync from Firestore failed", err);
-    }
-  } else {
-    // Firebase not configured — local-only mode
-    await seedIfNeeded();
-  }
+  await seedIfNeeded();
 
   await updateUserChip();
   initRouter();
@@ -121,17 +68,6 @@ async function boot() {
 
   // Notifications scheduler
   notificationSvc.init().catch((err) => console.warn("[notifications] init failed", err));
-
-  // Sync to Firestore on data changes (debounced)
-  if (isFirebaseReady() && getUser()) {
-    let syncTimer = null;
-    window.addEventListener("data-changed", () => {
-      clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => {
-        syncToFirestore(db).catch((err) => console.warn("[firebase] sync to Firestore failed", err));
-      }, 2000);
-    });
-  }
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((err) =>
