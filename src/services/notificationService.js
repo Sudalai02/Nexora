@@ -3,8 +3,8 @@
 // events, habits and daily reviews.
 //
 // Two channels:
-//   • In-app alert center (bell icon) — always works.
-//   • Native browser notifications (desktop + mobile via the
+//   In-app alert center (bell icon) — always works.
+//   Native browser notifications (desktop + mobile via the
 //     service worker) — used whenever the user granted permission.
 //
 // A 30s scheduler inspects live data and fires each alert exactly
@@ -78,7 +78,7 @@ export async function markRead(id) {
 
 export function permissionState() {
   if (!("Notification" in window)) return "unsupported";
-  return Notification.permission; // "granted" | "denied" | "default"
+  return Notification.permission;
 }
 
 export async function requestPermission() {
@@ -91,10 +91,7 @@ export async function requestPermission() {
 }
 
 export async function showNative(title, body, route = null) {
-  if (permissionState() !== "granted") {
-    // still record it so the bell shows what was missed
-    return;
-  }
+  if (permissionState() !== "granted") return;
   try {
     let swReg = null;
     if ("serviceWorker" in navigator) {
@@ -135,7 +132,7 @@ function saveLedger(l) {
   try {
     localStorage.setItem(LEDGER_KEY, JSON.stringify(l));
   } catch {
-    /* private mode — notifications will repeat on reload, acceptable */
+    /* private mode */
   }
 }
 
@@ -198,9 +195,8 @@ let timerHandle = null;
 
 export async function init() {
   if (timerHandle) return;
-  await runCheck(); // immediate catch-up pass
+  await runCheck();
   timerHandle = setInterval(runCheck, CHECK_INTERVAL_MS);
-  // resync instantly when the tab becomes visible again
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") runCheck();
   });
@@ -234,7 +230,7 @@ export async function runCheck() {
     if (tasksToday > 0 || d.eventsToday.length > 0) {
       await fire(`morning-${d.today}`, {
         type: "briefing",
-        title: "Good morning — your day ahead",
+        title: "Good morning",
         body: `${tasksToday} task${tasksToday === 1 ? "" : "s"} to handle${
           d.eventsToday.length ? `, ${d.eventsToday.length} event${d.eventsToday.length === 1 ? "" : "s"} today` : ""
         }.`,
@@ -243,40 +239,51 @@ export async function runCheck() {
     }
   }
 
-  // ---- tasks due today with a set time (fires at the start time) ----
-  for (const t of d.openTasks) {
-    if (t.dueDate === d.today && t.startTime) {
-      const m = minutesOf(t.startTime);
-      if (d.nowMin >= m && d.nowMin < m + 60) {
-        await fire(`task-time-${t.id}-${d.today}`, {
-          type: "task",
-          title: "Task starts now",
-          body: `${t.title}${t.endTime ? ` (until ${t.endTime})` : ""}`,
-          route: "#/tasks",
-        });
+  // ---- task start times (gated by deadline toggle) ----
+  if (n.deadline !== false) {
+    for (const t of d.openTasks) {
+      if (t.dueDate === d.today && t.startTime) {
+        const m = minutesOf(t.startTime);
+        if (d.nowMin >= m && d.nowMin < m + 60) {
+          await fire(`task-time-${t.id}-${d.today}`, {
+            type: "task",
+            title: "Task starts now",
+            body: `${t.title}${t.endTime ? ` (until ${t.endTime})` : ""}`,
+            route: "#/tasks",
+          });
+        }
       }
     }
-    if (t.dueDate && t.dueDate < d.today) {
-      const daysOver = Math.round((new Date(`${d.today}T00:00`) - new Date(`${t.dueDate}T00:00`)) / 86400000);
-      await fire(`task-overdue-${t.id}-${d.today}`, {
-        type: "deadline",
-        title: "Task overdue",
-        body: `“${t.title}” is ${daysOver} day${daysOver === 1 ? "" : "s"} past its due date.`,
-        route: "#/tasks",
-      });
-    }
-  }
 
-  // ---- deadlines: tasks due tomorrow (heads-up) ----
-  const tomorrow = addDays(d.today, 1);
-  for (const t of d.openTasks) {
-    if (t.dueDate === tomorrow) {
-      await fire(`task-duetmrw-${t.id}-${d.today}`, {
-        type: "deadline",
-        title: "Deadline tomorrow",
-        body: `“${t.title}” is due tomorrow.`,
-        route: "#/tasks",
-      });
+    // ---- overdue tasks (batched into a single alert) ----
+    const overdueTasks = d.openTasks.filter((t) => t.dueDate && t.dueDate < d.today);
+    if (overdueTasks.length) {
+      const key = `overdue-batch-${d.today}`;
+      if (!alreadyFired(key)) {
+        markFired(key);
+        const count = overdueTasks.length;
+        const body = count === 1
+          ? `${overdueTasks[0].title} is overdue.`
+          : `${count} tasks are overdue.`;
+        await pushAlert({ type: "deadline", title: "Overdue tasks", body, route: "#/tasks" });
+        if (wantNative) await showNative("Overdue tasks", body, "#/tasks");
+      }
+    }
+
+    // ---- tasks due tomorrow (batched into a single alert) ----
+    const tomorrow = addDays(d.today, 1);
+    const tmrwTasks = d.openTasks.filter((t) => t.dueDate === tomorrow);
+    if (tmrwTasks.length) {
+      const key = `duetmrw-batch-${d.today}`;
+      if (!alreadyFired(key)) {
+        markFired(key);
+        const count = tmrwTasks.length;
+        const body = count === 1
+          ? `${tmrwTasks[0].title} is due tomorrow.`
+          : `${count} tasks are due tomorrow.`;
+        await pushAlert({ type: "deadline", title: "Deadline tomorrow", body, route: "#/tasks" });
+        if (wantNative) await showNative("Deadline tomorrow", body, "#/tasks");
+      }
     }
   }
 
@@ -287,14 +294,14 @@ export async function runCheck() {
       await fire(`event-soon-${e.id}-${d.today}`, {
         type: "event",
         title: "Upcoming event",
-        body: `“${e.title}” starts at ${fmtClock(e.startHour)}.`,
+        body: `${e.title} starts at ${fmtClock(e.startHour)}.`,
         route: "#/calendar",
       });
     } else if (d.nowMin >= startMin && d.nowMin < startMin + 30) {
       await fire(`event-now-${e.id}-${d.today}`, {
         type: "event",
         title: "Event starting",
-        body: `“${e.title}” is starting now.`,
+        body: `${e.title} is starting now.`,
         route: "#/calendar",
       });
     }
@@ -307,21 +314,24 @@ export async function runCheck() {
       await fire(`habit-${h.id}-${d.today}`, {
         type: "habit",
         title: "Habit reminder",
-        body: `Time for “${h.title}” (${h.durationMinutes} min).`,
+        body: `Time for "${h.title}" (${h.durationMinutes} min).`,
         route: "#/goals",
       });
     }
   }
 
-  // ---- goals nearing target date ----
-  for (const g of d.goalsAtRisk) {
-    if (g.targetDate === d.today || g.targetDate === tomorrow || g.targetDate === addDays(d.today, 2)) {
-      await fire(`goal-risk-${g.id}-${g.targetDate}`, {
-        type: "goal",
-        title: "Goal deadline close",
-        body: `“${g.title}” targets ${g.targetDate}.`,
-        route: "#/goals",
-      });
+  // ---- goals nearing target date (gated by risk toggle) ----
+  if (n.risk !== false) {
+    const tomorrow = addDays(d.today, 1);
+    for (const g of d.goalsAtRisk) {
+      if (g.targetDate === d.today || g.targetDate === tomorrow || g.targetDate === addDays(d.today, 2)) {
+        await fire(`goal-risk-${g.id}-${g.targetDate}`, {
+          type: "goal",
+          title: "Goal deadline close",
+          body: `"${g.title}" targets ${g.targetDate}.`,
+          route: "#/goals",
+        });
+      }
     }
   }
 

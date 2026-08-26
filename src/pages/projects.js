@@ -151,7 +151,7 @@ export async function renderProjects(view, alive = () => true) {
         list.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case "progress":
-        list.sort((a, b) => (prog[b.id].pct ?? -1) - (prog[a.id].pct ?? -1));
+        list.sort((a, b) => ((prog[b.id]?.pct ?? -1) - (prog[a.id]?.pct ?? -1)));
         break;
       case "deadline":
         list.sort((a, b) => (a.deadline || "9999").localeCompare(b.deadline || "9999"));

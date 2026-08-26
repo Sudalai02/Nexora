@@ -19,6 +19,7 @@ const PERIODS = [
   { key: "3m",    label: "3M",    days: 90, compare: 90 },
 ];
 let currentPeriod = "week";
+const PERIOD_DAYS = { today: 1, week: 7, month: 30, "3m": 90 };
 
 // ---- helpers ----
 function esc(s) {
@@ -66,17 +67,20 @@ function statusIcon(pct) {
 }
 
 // ---- compute productivity score (weighted) ----
-function computeScore({ stats, prevStats, habitsCons, overdueCount }) {
+function computeScore({ stats, prevStats, habitsCons, overdueCount, goalProgressMap }) {
   const focusTarget = Math.max((stats.days || 7) * 45, 60);
+  const goalProgVals = goalProgressMap ? Object.values(goalProgressMap).map((g) => g.pct ?? 0) : [];
+  const avgGoalProg = goalProgVals.length ? Math.round(goalProgVals.reduce((a, v) => a + v, 0) / goalProgVals.length) : null;
   const parts = {
     tasks: stats.completionRate ?? (stats.tasksCompleted > 0 ? 80 : null),
     focus: pct(stats.focusMinutes, focusTarget),
+    goals: avgGoalProg,
     habits: habitsCons.length
       ? Math.round(habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length)
       : null,
     schedule: analytics.scheduleScore(stats),
   };
-  const weights = { tasks: 35, focus: 25, habits: 20, schedule: 20 };
+  const weights = { tasks: 30, focus: 20, goals: 20, habits: 15, schedule: 15 };
   let total = 0, weight = 0;
   for (const k of Object.keys(weights)) {
     if (parts[k] == null) continue;
@@ -193,7 +197,7 @@ export async function renderInsights(view, alive = () => true) {
   // Fetch all data in parallel
   const [stats, habitsCons, risks, streaks, tasksRaw, projects, goals] = await Promise.all([
     analytics.rangeStats(days),
-    analytics.habitConsistency(days),
+    analytics.habitConsistency(currentPeriod),
     analytics.currentRisks(),
     analytics.computeStreaks(),
     taskService.allTasks(),
@@ -219,8 +223,10 @@ export async function renderInsights(view, alive = () => true) {
 
   const today = todayISO();
   const OPEN = ["Todo", "In Progress", "Blocked"];
-  const overdueTasks = tasksRaw.filter((t) => t.dueDate && t.dueDate < today && OPEN.includes(t.status));
-  const score = computeScore({ stats, prevStats, habitsCons, overdueCount: overdueTasks.length });
+  const overdueTasks = currentPeriod === "today"
+    ? tasksRaw.filter((t) => t.dueDate === today && OPEN.includes(t.status))
+    : tasksRaw.filter((t) => t.dueDate && t.dueDate < today && OPEN.includes(t.status));
+  const score = computeScore({ stats, prevStats, habitsCons, overdueCount: overdueTasks.length, goalProgressMap: gProg });
 
   // Trend data
   const trend = await analytics.trendData(currentPeriod);
@@ -272,9 +278,6 @@ export async function renderInsights(view, alive = () => true) {
     <div class="insights-header">
       <button class="btn-back" data-nav="home">${icon("arrow-left")}</button>
       <h1 class="page-title">Insights</h1>
-      <div class="header-actions">
-        <button class="icon-btn" title="Search">${icon("search")}</button>
-      </div>
     </div>
 
     <!-- PERIOD TABS -->
@@ -325,13 +328,13 @@ export async function renderInsights(view, alive = () => true) {
     </section>
 
     <!-- NEEDS ATTENTION -->
-    ${risks.length ? `
     <section class="card insight-attention">
       <div class="module-head">
         <span class="module-emoji">⚠</span>
         <div><h2>Needs Your Attention</h2></div>
-        <span class="attention-count">${risks.length}</span>
+        ${risks.length ? `<span class="attention-count">${risks.length}</span>` : ""}
       </div>
+      ${risks.length ? `
       <div class="attention-list">
         ${risks.slice(0, 4).map((r) => `
           <div class="attention-item">
@@ -354,8 +357,13 @@ export async function renderInsights(view, alive = () => true) {
           </div>
         `).join("")}
       </div>
-      ${risks.length > 4 ? `<button class="btn btn-sm btn-secondary attention-see-all">▸ See all risks</button>` : ""}
-    </section>` : ""}
+      ${risks.length > 4 ? `<button class="btn btn-sm btn-secondary attention-see-all">See all risks</button>` : ""}
+      ` : `
+      <div class="empty-state" style="padding:var(--sp-5);">
+        <p>All clear — nothing needs your attention right now.</p>
+      </div>
+      `}
+    </section>
 
     <!-- PRODUCTIVITY TREND -->
     <section class="card insight-trend">
@@ -397,7 +405,7 @@ export async function renderInsights(view, alive = () => true) {
           <div><h2>Focus &amp; Deep Work</h2></div>
         </div>
         <div class="focus-stats">
-          <div class="focus-stat"><b class="num">${currentPeriod === "today" ? minutesToHuman(focusMin) : minutesToHuman(focusMin)}</b><span>${currentPeriod === "today" ? "Today" : "This Period"}</span></div>
+          <div class="focus-stat"><b class="num">${minutesToHuman(focusMin)}</b><span>${currentPeriod === "today" ? "Today" : periodLabel(currentPeriod)}</span></div>
           <div class="focus-stat"><b class="num">${sessions}</b><span>Sessions</span></div>
           <div class="focus-stat"><b class="num">${avgSession}m</b><span>Avg Session</span></div>
         </div>
@@ -467,7 +475,7 @@ export async function renderInsights(view, alive = () => true) {
           <div><h2>Habit Consistency</h2></div>
         </div>
         <div class="habits-list">
-          ${habitsCons.sort((a, b) => b.pct - a.pct).slice(0, 5).map((h) => {
+          ${[...habitsCons].sort((a, b) => b.pct - a.pct).slice(0, 5).map((h) => {
             const streak = streakMap[h.habit.id] || 0;
             return `
             <div class="habit-row">
@@ -505,10 +513,54 @@ export async function renderInsights(view, alive = () => true) {
           </div>
         `).join("")}
       </div>
+      <!-- Hidden detailed breakdown -->
+      <div class="ai-detail" id="ai-detail" style="display:none;">
+        <div class="ai-detail-grid">
+          <div class="ai-detail-card">
+            <div class="ai-detail-head">Score Breakdown</div>
+            <div class="ai-detail-body">
+              <div class="ai-detail-row"><span>Tasks</span><span>${score.parts.tasks != null ? score.parts.tasks + "%" : "—"}</span></div>
+              <div class="ai-detail-row"><span>Focus</span><span>${score.parts.focus != null ? score.parts.focus + "%" : "—"}</span></div>
+              <div class="ai-detail-row"><span>Habits</span><span>${score.parts.habits != null ? score.parts.habits + "%" : "—"}</span></div>
+              <div class="ai-detail-row"><span>Schedule</span><span>${score.parts.schedule != null ? score.parts.schedule + "%" : "—"}</span></div>
+            </div>
+          </div>
+          <div class="ai-detail-card">
+            <div class="ai-detail-head">Risk Summary</div>
+            <div class="ai-detail-body">
+              ${risks.length ? risks.slice(0, 5).map((r) => `
+                <div class="ai-detail-row">
+                  <span class="attention-sev ${r.severity}" style="width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;"></span>
+                  <span>${esc(r.title)}</span>
+                </div>
+              `).join("") : '<div class="ai-detail-row"><span>No risks detected</span></div>'}
+            </div>
+          </div>
+          <div class="ai-detail-card">
+            <div class="ai-detail-head">Period Stats</div>
+            <div class="ai-detail-body">
+              <div class="ai-detail-row"><span>Tasks completed</span><span>${stats.tasksCompleted}</span></div>
+              <div class="ai-detail-row"><span>Completion rate</span><span>${stats.completionRate != null ? stats.completionRate + "%" : "—"}</span></div>
+              <div class="ai-detail-row"><span>Focus time</span><span>${minutesToHuman(stats.focusMinutes)}</span></div>
+              <div class="ai-detail-row"><span>Sessions</span><span>${stats.sessionCount}</span></div>
+              <div class="ai-detail-row"><span>Avg task</span><span>${stats.avgTaskMinutes ? stats.avgTaskMinutes + "m" : "—"}</span></div>
+              <div class="ai-detail-row"><span>Overdue</span><span>${overdueCount}</span></div>
+            </div>
+          </div>
+          <div class="ai-detail-card">
+            <div class="ai-detail-head">Habits</div>
+            <div class="ai-detail-body">
+              ${habitsCons.length ? habitsCons.slice(0, 4).map((h) => `
+                <div class="ai-detail-row"><span>${esc(h.habit.title)}</span><span>${h.pct}% (${h.done}/${h.scheduled})</span></div>
+              `).join("") : '<div class="ai-detail-row"><span>No habits tracked</span></div>'}
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="ai-actions">
-        <a href="#/assistant" class="btn btn-primary">🚀 Do This Now</a>
+        <a href="#/assistant" class="btn btn-primary">Do This Now</a>
         <button class="btn btn-secondary" data-action="schedule-ai">Schedule It</button>
-        <button class="btn btn-secondary" data-action="details-ai">View Details</button>
+        <button class="btn btn-secondary" data-action="details-ai" id="toggle-ai-detail">View Details</button>
       </div>
     </section>
 
@@ -537,11 +589,12 @@ export async function renderInsights(view, alive = () => true) {
     btn.addEventListener("click", () => {
       const key = btn.dataset.period;
       if (key === "custom") {
-        // Simple custom date range picker
         const start = prompt("Start date (YYYY-MM-DD):");
         const end = prompt("End date (YYYY-MM-DD):");
         if (start && end) {
           const customDays = Math.max(diffDays(start, end) + 1, 1);
+          const existing = PERIODS.findIndex((p) => p.key === "custom");
+          if (existing >= 0) PERIODS.splice(existing, 1);
           PERIODS.push({ key: "custom", label: "Custom", days: customDays, compare: null });
           currentPeriod = "custom";
           renderInsights(view, alive);
@@ -600,15 +653,18 @@ export async function renderInsights(view, alive = () => true) {
     if (i >= 4) el.style.display = "none";
   });
 
-  // AI actions: Schedule It and View Details
+  // AI actions: Schedule It and View Details toggle
   view.querySelectorAll("[data-action='schedule-ai']").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = "#/calendar";
     });
   });
-  view.querySelectorAll("[data-action='details-ai']").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      location.hash = "#/insights";
-    });
+  view.querySelector("#toggle-ai-detail")?.addEventListener("click", () => {
+    const detail = view.querySelector("#ai-detail");
+    const btn = view.querySelector("#toggle-ai-detail");
+    if (!detail) return;
+    const open = detail.style.display !== "none";
+    detail.style.display = open ? "none" : "";
+    btn.textContent = open ? "View Details" : "Hide Details";
   });
 }

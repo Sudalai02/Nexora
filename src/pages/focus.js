@@ -338,12 +338,11 @@ export async function renderFocus(view, alive = () => true) {
 
         <div class="focus-task-chip" id="task-chip" role="button" tabindex="0" title="Choose task">
           ${icon("tasks")} <span id="task-title-display">${escapeHtml(T.taskTitle || tasks[0]?.title || "Pick a task to focus on")}</span>
+          <span class="focus-task-chevron">›</span>
         </div>
 
         <div class="focus-controls-v2">
-          <button class="icon-round-btn" id="reset-btn" aria-label="Reset timer">${icon("x")}</button>
           <button class="focus-btn-main-v2" id="start-btn" aria-label="Start">${icon("play")}</button>
-          <span style="width:48px;"></span>
         </div>
 
         ${
@@ -356,7 +355,6 @@ export async function renderFocus(view, alive = () => true) {
               </div>`
             : ""
         }
-        <div class="focus-hint">The timer keeps counting real time, even in a background tab.</div>
 
         ${historyHTML(groups)}
       </div>
@@ -411,12 +409,6 @@ export async function renderFocus(view, alive = () => true) {
         T.totalSeconds = mins * 60;
         arm(mins * 60);
         draw();
-      });
-
-      view.querySelector("#reset-btn").addEventListener("click", () => {
-        const disp = view.querySelector("#timer-display");
-        disp.textContent = secondsToClock(modeMinutes(selectedMode) * 60);
-        paintRing();
       });
 
       view.querySelector("#pomo-settings-btn").addEventListener("click", openPomoSettings);
@@ -498,7 +490,6 @@ export async function renderFocus(view, alive = () => true) {
           <button class="focus-btn-main-v2" id="toggle-btn" aria-label="Pause / resume">${icon(T.running ? "pause" : "play")}</button>
           <button class="btn btn-primary" id="complete-btn">Complete</button>
         </div>
-        <div class="focus-hint">The timer keeps counting real time even in a background tab.</div>
       </div>
     `;
     wireTimerControls();

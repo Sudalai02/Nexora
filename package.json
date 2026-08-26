@@ -6,5 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "npx --yes http-server -p 5173 -c-1 ."
+  },
+  "dependencies": {
+    "firebase": "^12.18.0"
   }
 }

@@ -12,6 +12,7 @@ import { renderAssistant } from "./pages/assistant.js";
 import { renderSettings } from "./pages/settings.js";
 import { renderRecycleBin } from "./pages/recycleBin.js";
 import { renderMore } from "./pages/more.js";
+import { renderLogin } from "./pages/login.js";
 import { seedIfNeeded } from "./store/seed.js";
 import * as db from "./store/db.js";
 import { getProfile, getSettings } from "./services/settingsService.js";
@@ -22,7 +23,17 @@ import { openSearch } from "./ui/searchOverlay.js";
 import { initBellPanel } from "./ui/bellPanel.js";
 import { toast } from "./ui/toast.js";
 import { applyTheme } from "./pages/settings.js";
+import {
+  isFirebaseReady,
+  initFirebase,
+  onAuthChange,
+  getUser,
+  syncToFirestore,
+  syncFromFirestore,
+  signOut,
+} from "./services/firebaseService.js";
 
+// ===================== ROUTES =====================
 registerRoute("home", renderHome);
 registerRoute("tasks", renderTasks);
 registerRoute("projects", renderProjects);
@@ -36,10 +47,54 @@ registerRoute("assistant", renderAssistant);
 registerRoute("settings", renderSettings);
 registerRoute("recycleBin", renderRecycleBin);
 registerRoute("more", renderMore);
+registerRoute("login", renderLogin);
+
+// Protected routes — require auth when Firebase is configured
+const PROTECTED_ROUTES = new Set([
+  "home", "tasks", "projects", "goals", "calendar",
+  "focus", "notes", "inbox", "insights", "assistant",
+  "settings", "recycleBin", "more",
+]);
 
 // ===================== BOOT =====================
 async function boot() {
-  await seedIfNeeded();
+  // Initialize Firebase if configured
+  if (isFirebaseReady()) {
+    initFirebase();
+
+    // Wait for auth state (max 10s for Google popup)
+    const user = await new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(null), 10000);
+      const unsub = onAuthChange((u) => {
+        clearTimeout(timeout);
+        unsub();
+        resolve(u);
+      });
+    });
+
+    if (!user) {
+      // Not logged in — show login page
+      window.location.hash = "#/login";
+      initRouter();
+      initBellPanel();
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      }
+      return;
+    }
+
+    // Logged in — sync data from Firestore, then seed if needed
+    await seedIfNeeded();
+    try {
+      await syncFromFirestore(db);
+    } catch (err) {
+      console.warn("[firebase] sync from Firestore failed", err);
+    }
+  } else {
+    // Firebase not configured — local-only mode
+    await seedIfNeeded();
+  }
+
   await updateUserChip();
   initRouter();
   initBellPanel();
@@ -61,17 +116,27 @@ async function boot() {
     applyScreenVisibility(s.screens || {});
   });
 
-  // 15-day retention sweep — safe to run every start.
+  // 15-day retention sweep
   recycleSvc.purgeExpired().catch((err) => console.warn("[recycle] purge failed", err));
 
-  // Real notifications scheduler (bell center + native push).
+  // Notifications scheduler
   notificationSvc.init().catch((err) => console.warn("[notifications] init failed", err));
+
+  // Sync to Firestore on data changes (debounced)
+  if (isFirebaseReady() && getUser()) {
+    let syncTimer = null;
+    window.addEventListener("data-changed", () => {
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(() => {
+        syncToFirestore(db).catch((err) => console.warn("[firebase] sync to Firestore failed", err));
+      }, 2000);
+    });
+  }
 
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch((err) =>
       console.warn("[pwa] service worker registration failed", err)
     );
-    // Notification clicks land here when the app is already open.
     navigator.serviceWorker.addEventListener("message", (e) => {
       const { type, route } = e.data || {};
       if (type === "nexora:navigate" && route && window.location.hash !== route) {
@@ -89,18 +154,16 @@ async function updateUserChip() {
   const initial = (profile.name || "?").trim().charAt(0).toUpperCase();
   chip.querySelector(".avatar").textContent = initial;
   chip.querySelector(".user-chip-name").textContent = profile.name || "You";
-  chip.querySelector(".user-chip-meta").textContent = profile.workspace || "Personal workspace";
+  chip.querySelector(".user-chip-meta").textContent = profile.workspace || "My workspace";
 }
 
 function applyScreenVisibility(screens) {
-  // Hide/show sidebar nav items
   document.querySelectorAll(".sidebar-nav .nav-item").forEach((el) => {
     const route = el.dataset.route;
     if (route && route in screens) {
       el.style.display = screens[route] ? "" : "none";
     }
   });
-  // Hide/show sheet nav items
   document.querySelectorAll(".sheet-grid .sheet-item").forEach((el) => {
     const href = el.getAttribute("href") || "";
     const route = href.replace("#/", "");
@@ -154,7 +217,7 @@ globalSearch?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === "ArrowDown") launchSearch(e);
 });
 
-// Quick add captures straight into the Inbox — triage happens there.
+// Quick add captures straight into the Inbox
 quickAddInput?.addEventListener("keydown", async (e) => {
   if (e.key === "Enter" && quickAddInput.value.trim()) {
     const content = quickAddInput.value.trim();
@@ -232,7 +295,6 @@ moreSheetBackdrop.querySelectorAll("a").forEach((a) => {
 });
 
 // ===================== MOBILE SIDEBAR MENU TOGGLE =====================
-// (menu-toggle currently opens the "more" sheet on mobile as a simple pattern)
 document.getElementById("menu-toggle")?.addEventListener("click", openMoreSheet);
 
 export { updateUserChip };

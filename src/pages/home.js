@@ -156,7 +156,7 @@ export async function renderHome(view, alive = () => true) {
     dueToday.filter((t) => t.status === "Completed").length +
     tasks.filter((t) => t.completedAt?.slice(0, 10) === today && (!t.dueDate || t.dueDate !== today)).length;
   const openTodayCount = Math.max(0, dueToday.length - dueToday.filter((t) => t.status === "Completed").length);
-  const progressBase = Math.max(dueToday.length + doneToday ? dueToday.length : 1);
+  const progressBase = Math.max(dueToday.length + (doneToday || 0), 1);
   const donePct = pct(doneToday, Math.max(progressBase, 1));
   const importantCount = dueToday.length + todayEvents.length;
 
@@ -232,7 +232,7 @@ export async function renderHome(view, alive = () => true) {
   const pProg = projectService.progressMap(projects, tasks);
   const activeProjects = projects
     .filter((p) => p.status !== "Completed" && p.status !== "Cancelled")
-    .sort((a, b) => (pProg[b.id].pct ?? 0) - (pProg[a.id].pct ?? 0))
+    .sort((a, b) => ((pProg[b.id]?.pct ?? 0) - (pProg[a.id]?.pct ?? 0)))
     .slice(0, 5);
 
   // ----- Focus -----

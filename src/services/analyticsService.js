@@ -285,23 +285,53 @@ export function bestWindow(hourBuckets) {
   return { startHour: bestStart, totalMinutes: Math.max(0, bestSum) };
 }
 
-export async function habitConsistency(days = 30) {
+export async function habitConsistency(periodOrDays = 30) {
   const habits = (await db.getAll("habits")).filter((h) => !h.archived);
   const logs = await db.getAll("habitLogs");
   const doneSet = new Set(logs.filter((l) => l.done).map((l) => l.id));
   const today = todayISO();
 
   const perHabit = habits.map((h) => {
-    let scheduled = 0,
-      done = 0;
-    for (let d = 1; d <= days; d++) {
-      const date = new Date(`${today}T00:00:00`);
-      date.setDate(date.getDate() - d);
-      const wd = date.getDay();
-      if (!(h.weekdays || []).includes(wd)) continue;
-      scheduled += 1;
-      if (doneSet.has(`${h.id}:${date.toISOString().slice(0, 10)}`)) done += 1;
+    let scheduled = 0;
+    let done = 0;
+
+    function checkDay(iso) {
+      const wd = fromISO(iso).getDay();
+      if ((h.weekdays || []).includes(wd)) {
+        scheduled += 1;
+        if (doneSet.has(`${h.id}:${iso}`)) done += 1;
+      }
     }
+
+    if (periodOrDays === "today") {
+      checkDay(today);
+    } else if (periodOrDays === "week") {
+      // Calendar week: Monday through today
+      const todayDate = fromISO(today);
+      const dayOfWeek = todayDate.getDay();
+      const mondayOffset = (dayOfWeek + 6) % 7;
+      for (let d = mondayOffset; d >= 0; d--) {
+        const date = new Date(todayDate);
+        date.setDate(date.getDate() - d);
+        checkDay(date.toISOString().slice(0, 10));
+      }
+    } else if (periodOrDays === "month") {
+      // Last 30 days including today
+      for (let d = 30 - 1; d >= 0; d--) {
+        const date = new Date(`${today}T00:00:00`);
+        date.setDate(date.getDate() - d);
+        checkDay(date.toISOString().slice(0, 10));
+      }
+    } else {
+      // Custom or numeric: last N days including today
+      const days = typeof periodOrDays === "number" ? periodOrDays : 30;
+      for (let d = days - 1; d >= 0; d--) {
+        const date = new Date(`${today}T00:00:00`);
+        date.setDate(date.getDate() - d);
+        checkDay(date.toISOString().slice(0, 10));
+      }
+    }
+
     return { habit: h, scheduled, done, pct: scheduled ? Math.round((done / scheduled) * 100) : null };
   });
 

@@ -2,7 +2,7 @@
 // NEXORA SERVICE WORKER — offline-first app shell
 // ============================================================
 
-const CACHE = "nexora-cache-v5";
+const CACHE = "nexora-cache-v6";
 const SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,7 @@ const SHELL = [
   "./src/styles/components.css",
   "./src/styles/pages.css",
   "./src/styles/features.css",
+  "./src/styles/v2.css",
 ];
 
 self.addEventListener("install", (event) => {
