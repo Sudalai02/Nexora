@@ -197,7 +197,7 @@ export function aiInsightForPeriod(stats, habitsCons, risks, score) {
 
 // ---- Schedule score estimate ----
 export function scheduleScore(stats) {
-  if (stats.completionRate == null) return 50;
+  if (stats.completionRate == null) return null;
   return clamp(Math.round(stats.completionRate * 0.6 + (stats.sessionCount > 0 ? 40 : 20)), 0, 100);
 }
 
