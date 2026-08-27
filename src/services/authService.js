@@ -70,7 +70,7 @@ export function initGoogleButton(containerEl, onLoadingChange) {
           return;
         }
         try {
-          const credential = GoogleAuthProvider.credential(response.credential);
+          const credential = googleProvider.credential(response.credential);
           await signInWithCredential(auth, credential);
         } catch (err) {
           console.error("[auth] Firebase Google sign-in failed:", err);
