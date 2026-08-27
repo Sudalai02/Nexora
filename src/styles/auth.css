@@ -125,6 +125,15 @@
   background: var(--hairline);
 }
 
+.auth-google-wrap {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+.auth-google-wrap iframe {
+  border-radius: var(--r-sm) !important;
+}
+
 .auth-google-btn {
   width: 100%;
   padding: 11px var(--sp-4);
