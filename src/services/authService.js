@@ -5,6 +5,7 @@
 
 import {
   auth,
+  GoogleAuthProvider,
   googleProvider,
   GOOGLE_CLIENT_ID,
   signInWithEmailAndPassword,
@@ -70,7 +71,7 @@ export function initGoogleButton(containerEl, onLoadingChange) {
           return;
         }
         try {
-          const credential = googleProvider.credential(response.credential);
+          const credential = GoogleAuthProvider.credential(response.credential);
           await signInWithCredential(auth, credential);
         } catch (err) {
           console.error("[auth] Firebase Google sign-in failed:", err);

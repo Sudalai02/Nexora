@@ -35,6 +35,8 @@ const googleProvider = new GoogleAuthProvider();
 
 export {
   auth,
+  auth as firebaseAuth,
+  GoogleAuthProvider,
   googleProvider,
   GOOGLE_CLIENT_ID,
   signInWithEmailAndPassword,
