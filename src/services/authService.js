@@ -44,13 +44,12 @@ async function syncFirebaseProfile(user) {
   if (!user) return;
   const { getProfile, saveProfile } = await import("./settingsService.js");
   const profile = await getProfile();
-  if (!profile || !profile.email || profile.name === "Alex Rivera") {
-    const update = {};
-    if (user.displayName) update.name = user.displayName;
-    if (user.email) update.email = user.email;
-    const photo =
-      user.photoURL && (profile && !profile.avatar) ? { avatar: user.photoURL } : {};
-    await saveProfile({ ...update, ...photo });
+  const update = {};
+  if (user.displayName) update.name = user.displayName;
+  if (user.email) update.email = user.email;
+  if (user.photoURL) update.avatar = user.photoURL;
+  if (Object.keys(update).length) {
+    await saveProfile({ ...update, id: profile?.id || "profile" });
   }
 }
 

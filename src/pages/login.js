@@ -42,7 +42,7 @@ export function renderLoginScreen() {
         <div class="auth-register-fields" id="auth-register-fields">
           <div class="auth-field">
             <label for="auth-name">Full name</label>
-            <input type="text" id="auth-name" placeholder="Alex Rivera" autocomplete="name" />
+            <input type="text" id="auth-name" placeholder="Your full name" autocomplete="name" />
           </div>
         </div>
 
