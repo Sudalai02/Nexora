@@ -5,7 +5,7 @@
 export const APP_NAME = "TaskTrack";
 
 export const STORAGE_KEYS = {
-  swCacheVersion: "nexora-cache-v6",
+  swCacheVersion: "nexora-cache-v7",
 };
 
 export const DEFAULT_SETTINGS = {

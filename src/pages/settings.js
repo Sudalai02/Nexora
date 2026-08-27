@@ -2,6 +2,7 @@ import { openForm, confirm as confirmModal } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
 import * as db from "../store/db.js";
 import { getProfile, saveProfile, getSettings, saveSettings, DEFAULT_SETTINGS } from "../services/settingsService.js";
+import { logout } from "../services/authService.js";
 
 const sections = [
   { id: "account", label: "Account" },
@@ -348,8 +349,7 @@ export async function renderSettings(view, alive = () => true) {
         confirmLabel: "Log out",
       });
       if (!ok) return;
-      toast("Logged out");
-      window.location.hash = "#/login";
+      await logout();
     });
 
     // AI settings save

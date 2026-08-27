@@ -22,6 +22,8 @@ import { openSearch } from "./ui/searchOverlay.js";
 import { initBellPanel } from "./ui/bellPanel.js";
 import { toast } from "./ui/toast.js";
 import { applyTheme } from "./pages/settings.js";
+import { onAuthChange, logout } from "./services/authService.js";
+import { renderLoginScreen } from "./pages/login.js";
 
 // ===================== ROUTES =====================
 registerRoute("home", renderHome);
@@ -174,38 +176,68 @@ async function updateInboxBadge() {
   badge.style.display = pending ? "" : "none";
 }
 
-boot()
-  .then(updateInboxBadge)
-  .catch((err) => {
-    console.error("[nexora] boot failed:", err);
-    const root = document.getElementById("page-root");
-    if (root) {
-      root.innerHTML = `
-        <div class="card error-card">
-          <h3>TaskTrack couldn't start</h3>
-          <p>${String(err?.message || err)}</p>
-          <div style="display:flex; gap:10px; justify-content:center; margin-top:14px;">
-            <button class="btn btn-primary btn-sm" onclick="location.reload()">Reload</button>
-            <button class="btn btn-danger btn-sm" id="boot-reset-btn">Reset local data</button>
+// ===================== AUTH GUARD =====================
+const authScreen = document.getElementById("auth-screen");
+const appEl = document.getElementById("app");
+let booted = false;
+
+function showLogin() {
+  authScreen.classList.add("active");
+  appEl.style.display = "none";
+  renderLoginScreen();
+}
+
+function showApp() {
+  if (booted) return;
+  booted = true;
+  authScreen.classList.remove("active");
+  authScreen.innerHTML = "";
+  appEl.style.display = "";
+  boot()
+    .then(updateInboxBadge)
+    .catch((err) => {
+      console.error("[nexora] boot failed:", err);
+      const root = document.getElementById("page-root");
+      if (root) {
+        root.innerHTML = `
+          <div class="card error-card">
+            <h3>TaskTrack couldn't start</h3>
+            <p>${String(err?.message || err)}</p>
+            <div style="display:flex; gap:10px; justify-content:center; margin-top:14px;">
+              <button class="btn btn-primary btn-sm" onclick="location.reload()">Reload</button>
+              <button class="btn btn-danger btn-sm" id="boot-reset-btn">Reset local data</button>
+            </div>
           </div>
-        </div>
-      `;
-      root.querySelector("#boot-reset-btn")?.addEventListener("click", async () => {
-        try {
-          const names = await (await indexedDB.databases()).map((d) => d.name);
-          for (const n of names) indexedDB.deleteDatabase(n);
-        } catch {
-          indexedDB.deleteDatabase("nexora-db");
-          indexedDB.deleteDatabase("nexora");
-        }
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          for (const k of keys) await caches.delete(k);
-        }
-        location.reload();
-      });
-    }
-  });
+        `;
+        root.querySelector("#boot-reset-btn")?.addEventListener("click", async () => {
+          try {
+            const names = await (await indexedDB.databases()).map((d) => d.name);
+            for (const n of names) indexedDB.deleteDatabase(n);
+          } catch {
+            indexedDB.deleteDatabase("nexora-db");
+            indexedDB.deleteDatabase("nexora");
+          }
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            for (const k of keys) await caches.delete(k);
+          }
+          location.reload();
+        });
+      }
+    });
+}
+
+// Show login immediately while Firebase resolves
+showLogin();
+
+// When Firebase auth state is known, switch view
+onAuthChange((user) => {
+  if (user) {
+    showApp();
+  } else {
+    showLogin();
+  }
+});
 
 // ===================== MOBILE "MORE" SHEET =====================
 const moreSheetBackdrop = document.getElementById("more-sheet-backdrop");
