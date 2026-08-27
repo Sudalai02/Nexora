@@ -1,5 +1,5 @@
 // ============================================================
-// LOGIN PAGE — Email/password + Google OAuth
+// LOGIN PAGE — Email/password + Google OAuth2 popup
 // ============================================================
 
 import {
@@ -10,7 +10,6 @@ import {
 } from "../services/authService.js";
 
 let isSignUp = false;
-let googleSigningIn = false;
 
 export function renderLoginScreen() {
   const screen = document.getElementById("auth-screen");
@@ -18,7 +17,6 @@ export function renderLoginScreen() {
   if (screen.querySelector(".auth-card")) return;
 
   isSignUp = false;
-  googleSigningIn = false;
 
   screen.innerHTML = `
     <div class="auth-card">
@@ -107,7 +105,6 @@ export function renderLoginScreen() {
     submitBtn.textContent = loading ? "Please wait…" : (isSignUp ? "Create Account" : "Sign In");
   }
 
-  // Toggle sign-in / sign-up
   function handleToggle() {
     isSignUp = !isSignUp;
     clearError();
@@ -122,7 +119,6 @@ export function renderLoginScreen() {
   }
   toggleBtn.addEventListener("click", handleToggle);
 
-  // Form submit
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     clearError();
@@ -157,7 +153,6 @@ export function renderLoginScreen() {
     }
   });
 
-  // Forgot password
   forgotBtn.addEventListener("click", async () => {
     const email = emailInput.value.trim();
     if (!email) { showError("Enter your email above, then click Forgot password."); return; }
@@ -172,18 +167,21 @@ export function renderLoginScreen() {
     }
   });
 
-  // Google sign-in (redirect — avoids COOP/popup issues)
   googleBtn.addEventListener("click", async () => {
-    if (googleSigningIn) return;
-    googleSigningIn = true;
     clearError();
     setLoading(true);
     try {
       await loginWithGoogle();
     } catch (err) {
       setLoading(false);
-      showError("Google sign-in failed. Please try again.");
+      const msg = err.message || "";
+      if (msg.includes("cancelled") || msg.includes("closed") || msg.includes("Canceled")) {
+        showError("Sign-in cancelled. Please try again.");
+      } else if (msg.includes("failed to load")) {
+        showError("Google Sign-In failed to load. Check your internet connection.");
+      } else {
+        showError("Google sign-in failed: " + msg);
+      }
     }
-    googleSigningIn = false;
   });
 }

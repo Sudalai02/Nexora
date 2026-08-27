@@ -1,7 +1,5 @@
 // ============================================================
 // FIREBASE CONFIGURATION
-// Replace these with your Firebase project credentials.
-// Get them from: Firebase Console → Project Settings → General
 // ============================================================
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
@@ -10,15 +8,13 @@ import {
   GoogleAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCredential,
   sendPasswordResetEmail,
   onAuthStateChanged,
   signOut,
   updateProfile,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyDlaypoiUAc_nRu6vq4mEUlRgU3L8drgVc",
   authDomain: "tasktrack-ss003.firebaseapp.com",
@@ -29,6 +25,10 @@ const firebaseConfig = {
   measurementId: "G-ZYJ2JQFKL4"
 };
 
+// Paste your Google OAuth Client ID here from:
+// Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs (type: Web application)
+const GOOGLE_CLIENT_ID = "971261797435-5vmnjhothmdjd16eos912frf6t9ip80v.apps.googleusercontent.com";
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
@@ -36,10 +36,10 @@ const googleProvider = new GoogleAuthProvider();
 export {
   auth,
   googleProvider,
+  GOOGLE_CLIENT_ID,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithCredential,
   sendPasswordResetEmail,
   onAuthStateChanged,
   signOut,
