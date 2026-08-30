@@ -14,6 +14,7 @@ import * as noteService from "../services/noteService.js";
 import * as taskService from "../services/taskService.js";
 import * as recycleService from "../services/recycleService.js";
 import * as aiService from "../ai/aiService.js";
+import { setRefreshPaused } from "../router.js";
 
 const state = {
   folderId: "all", // all | none | <folderId>
@@ -100,8 +101,11 @@ export async function renderNotes(view, alive = () => true) {
   const [folders, notes] = await Promise.all([noteService.allFolders(), noteService.allNotes()]);
   if (!alive()) return;
 
-  // After navigation always come back to the list.
-  if (state.mode === "edit") state.mode = state.activeId ? "reader" : "list";
+  // After navigation always come back to the list. While actively editing,
+  // keep the editor open (don't drop back to the reader mid-keystroke).
+  if (state.mode === "edit" && state.activeId) {
+    state.mode = notes.find((n) => n.id === state.activeId) ? "edit" : "list";
+  }
   if (state.activeId && !notes.find((n) => n.id === state.activeId)) {
     state.activeId = null;
     state.mode = "list";
@@ -114,6 +118,10 @@ export async function renderNotes(view, alive = () => true) {
 
   function draw() {
     const active = notes.find((n) => n.id === state.activeId) || null;
+
+    // While the editor is open, pause global auto-refresh so autosave
+    // can't rebuild the page and steal the user's focus mid-typing.
+    setRefreshPaused(state.mode === "edit" && !!active);
 
     if (state.mode !== "list" && active) {
       view.innerHTML = state.mode === "edit" ? editorHTML(active) : readerHTML(active);

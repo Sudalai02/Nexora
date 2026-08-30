@@ -5,6 +5,7 @@ const routes = {};
 let currentRoute = null;
 let renderSeq = 0;
 let refreshTimer = null;
+let refreshPaused = false;
 
 export function registerRoute(name, renderFn) {
   routes[name] = renderFn;
@@ -26,8 +27,16 @@ export async function rerender() {
 
 // Instant refresh: services emit "data-changed" after any mutation.
 // Debounced so a burst of writes causes a single re-render.
+// While refresh is paused (e.g. an editor is open) no re-render happens,
+// so an autosave can't wipe out the user's in-progress typing.
+export function setRefreshPaused(paused) {
+  if (paused) clearTimeout(refreshTimer);
+  refreshPaused = !!paused;
+}
+
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
+  if (refreshPaused) return;
   refreshTimer = setTimeout(() => {
     if (!currentRoute) return;
     rerender().catch((err) => console.error("[router] refresh failed", err));
@@ -74,6 +83,8 @@ export function initRouter() {
     const route = resolveRouteFromHash();
     currentRoute = route;
     setActiveNavItem(route);
+    // Navigation away from an open editor should resume live refresh.
+    setRefreshPaused(false);
     view.style.opacity = "0";
     setTimeout(async () => {
       view.innerHTML = "";

@@ -54,6 +54,38 @@ function scoreClass(s) {
   return "bad";
 }
 
+// Plain-language description of each score category so anyone can
+// understand what is being measured and how it helps.
+const CATEGORY_PLAIN = {
+  Tasks: "How often completed tasks are finished on time and not left overdue.",
+  Focus: "Time spent in deep, distraction-free focus sessions.",
+  Goals: "How much progress has been made toward your active goals.",
+  Habits: "How consistently you stick to your scheduled habits.",
+  Schedule: "How well your day is planned out ahead of time.",
+};
+
+// One clear, human summary of the overall score and what to do next.
+function plainSummary(score) {
+  const parts = score.parts;
+  const weakest = Object.keys(parts)
+    .filter((k) => CATEGORY_PLAIN[k] && parts[k] != null)
+    .sort((a, b) => parts[a] - parts[b])[0];
+
+  if (score.score >= 85) {
+    return "Excellent — you're doing great. Keep up this pace and protect what's working.";
+  }
+  if (score.score >= 70) {
+    return `Nice work! To go even higher, focus on your lowest area: ${weakest ? CATEGORY_PLAIN[weakest].replace("How ", "").replace(".", "").toLowerCase() + "." : "keep the momentum going."}`;
+  }
+  if (score.score >= 50) {
+    return `You're on a steady path. The biggest win right now is your lowest area — ${weakest ? CATEGORY_PLAIN[weakest].charAt(0).toLowerCase() + CATEGORY_PLAIN[weakest].slice(1) : "pick one habit to improve."}`;
+  }
+  if (score.score >= 30) {
+    return "Things have been tough lately — that's okay. Pick ONE small thing to fix this week and build from there.";
+  }
+  return "Let's start fresh. Do a small, easy task today and rebuild your rhythm one step at a time.";
+}
+
 function statusColor(pct) {
   if (pct >= 70) return "green";
   if (pct >= 40) return "yellow";
@@ -308,22 +340,28 @@ export async function renderInsights(view, alive = () => true) {
             : `<span class="score-delta flat">— same as before</span>`
           }
           <div class="score-verdict">${scoreLabel(score.score)}</div>
+          <p class="score-plain">${plainSummary(score)}</p>
         </div>
       </div>
-      <div class="score-categories">
-        ${[
-          ["Tasks", score.parts.tasks],
-          ["Focus", score.parts.focus],
-          ["Goals", score.parts.goals],
-          ["Habits", score.parts.habits],
-          ["Schedule", score.parts.schedule],
-        ].map(([label, val]) => `
-          <div class="cat-row">
-            <span class="cat-label">${label}</span>
-            <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
-            <span class="cat-val">${val != null ? val + "%" : "—"}</span>
-          </div>
-        `).join("")}
+      <div class="score-how">
+        <div class="score-how-title">ℹ️ How your score is built</div>
+        <div class="score-categories">
+          ${[
+            ["Tasks", score.parts.tasks],
+            ["Focus", score.parts.focus],
+            ["Goals", score.parts.goals],
+            ["Habits", score.parts.habits],
+            ["Schedule", score.parts.schedule],
+          ].map(([label, val]) => `
+            <div class="cat-row">
+              <span class="cat-label">${label}</span>
+              <span class="cat-desc">${CATEGORY_PLAIN[label]}</span>
+              <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
+              <span class="cat-val">${val != null ? val + "%" : "—"}</span>
+            </div>
+          `).join("")}
+        </div>
+        <div class="score-foot-note">Each area is measured and combined to make your overall score. A higher percentage in an area means that part is going well.</div>
       </div>
     </section>
 
