@@ -54,38 +54,6 @@ function scoreClass(s) {
   return "bad";
 }
 
-// Plain-language description of each score category so anyone can
-// understand what is being measured and how it helps.
-const CATEGORY_PLAIN = {
-  Tasks: "How often completed tasks are finished on time and not left overdue.",
-  Focus: "Time spent in deep, distraction-free focus sessions.",
-  Goals: "How much progress has been made toward your active goals.",
-  Habits: "How consistently you stick to your scheduled habits.",
-  Schedule: "How well your day is planned out ahead of time.",
-};
-
-// One clear, human summary of the overall score and what to do next.
-function plainSummary(score) {
-  const parts = score.parts;
-  const weakest = Object.keys(parts)
-    .filter((k) => CATEGORY_PLAIN[k] && parts[k] != null)
-    .sort((a, b) => parts[a] - parts[b])[0];
-
-  if (score.score >= 85) {
-    return "Excellent — you're doing great. Keep up this pace and protect what's working.";
-  }
-  if (score.score >= 70) {
-    return `Nice work! To go even higher, focus on your lowest area: ${weakest ? CATEGORY_PLAIN[weakest].replace("How ", "").replace(".", "").toLowerCase() + "." : "keep the momentum going."}`;
-  }
-  if (score.score >= 50) {
-    return `You're on a steady path. The biggest win right now is your lowest area — ${weakest ? CATEGORY_PLAIN[weakest].charAt(0).toLowerCase() + CATEGORY_PLAIN[weakest].slice(1) : "pick one habit to improve."}`;
-  }
-  if (score.score >= 30) {
-    return "Things have been tough lately — that's okay. Pick ONE small thing to fix this week and build from there.";
-  }
-  return "Let's start fresh. Do a small, easy task today and rebuild your rhythm one step at a time.";
-}
-
 function statusColor(pct) {
   if (pct >= 70) return "green";
   if (pct >= 40) return "yellow";
@@ -178,22 +146,94 @@ function trendSVG(pts, w = 480, h = 140) {
   const xLabels = pts.filter((_, i) => i % xStep === 0 || i === pts.length - 1);
 
   return `
-  <svg class="trend-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-    <defs>
-      <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="var(--focus)" stop-opacity="0.15"/>
-        <stop offset="100%" stop-color="var(--focus)" stop-opacity="0.02"/>
-      </linearGradient>
-    </defs>
-    ${yTicks.map((t) => `<line x1="${pad.l}" y1="${t.y}" x2="${w - pad.r}" y2="${t.y}" stroke="var(--hairline)" stroke-width="0.5"/><text x="${pad.l - 4}" y="${t.y + 3}" text-anchor="end" fill="var(--graphite-dim)" font-size="9">${t.label}</text>`).join("")}
-    <path d="${areaPath}" fill="url(#trend-fill)"/>
-    <path d="${path}" fill="none" stroke="var(--focus)" stroke-width="2" stroke-linecap="round"/>
-    ${coords.map((c, i) => `<circle cx="${c.x}" cy="${c.y}" r="3" fill="var(--paper)" stroke="var(--focus)" stroke-width="1.5"/>`).join("")}
-    ${xLabels.map((p, i) => {
-      const idx = pts.indexOf(p);
-      return `<text x="${coords[idx].x}" y="${h - 4}" text-anchor="middle" fill="var(--graphite-dim)" font-size="9">${p.label}</text>`;
-    }).join("")}
-  </svg>`;
+  <div class="trend-point-wrap">
+    <svg class="trend-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--focus)" stop-opacity="0.15"/>
+          <stop offset="100%" stop-color="var(--focus)" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+      ${yTicks.map((t) => `<line x1="${pad.l}" y1="${t.y}" x2="${w - pad.r}" y2="${t.y}" stroke="var(--hairline)" stroke-width="0.5"/><text x="${pad.l - 4}" y="${t.y + 3}" text-anchor="end" fill="var(--graphite-dim)" font-size="9">${t.label}</text>`).join("")}
+      <path d="${areaPath}" fill="url(#trend-fill)"/>
+      <path d="${path}" fill="none" stroke="var(--focus)" stroke-width="2" stroke-linecap="round"/>
+      ${coords.map((c, i) => `
+        <g class="trend-point" data-idx="${i}" role="button" tabindex="0" aria-label="${pts[i].label} — ${pts[i].value} productivity">
+          <circle cx="${c.x}" cy="${c.y}" r="10" fill="transparent"/>
+          <circle cx="${c.x}" cy="${c.y}" r="3.4" fill="var(--paper)" stroke="var(--focus)" stroke-width="1.6"/>
+        </g>
+      `).join("")}
+      ${xLabels.map((p, i) => {
+        const idx = pts.indexOf(p);
+        return `<text x="${coords[idx].x}" y="${h - 4}" text-anchor="middle" fill="var(--graphite-dim)" font-size="9">${p.label}</text>`;
+      }).join("")}
+    </svg>
+    <div class="trend-popup" role="dialog" aria-live="polite" hidden></div>
+  </div>`;
+}
+
+// ---- trend point breakdown popup ----
+function fmtFocus(min) {
+  if (!min) return "0 min";
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+function pointBreakdownHTML(p, isToday) {
+  if (isToday || !p.tasks) {
+    return `
+      <div class="tp-label">${esc(p.label)}</div>
+      <div class="tp-row"><span>Focus</span><b>${fmtFocus(p.focusMin)}</b></div>
+      <div class="tp-note">How it's counted:<br/>${fmtFocus(p.focusMin)} of focus = ${p.value} pts.</div>
+    `;
+  }
+  const fromTasks = p.tasks * 30;
+  const fromFocus = p.focusMin;
+  return `
+    <div class="tp-label">${esc(p.label)}</div>
+    <div class="tp-row"><span>Tasks completed</span><b>${p.tasks}</b></div>
+    <div class="tp-row"><span>Focus time</span><b>${fmtFocus(p.focusMin)}</b></div>
+    <div class="tp-note">How it's counted:<br/>${p.tasks} × 30 (tasks) + ${fromFocus} (focus min) = <b>${p.value}</b>.</div>
+  `;
+}
+
+function wireTrend(wrap, pts, isToday) {
+  const svg = wrap.querySelector(".trend-svg");
+  const popup = wrap.querySelector(".trend-popup");
+  const close = () => { popup.hidden = true; };
+  const show = (idx) => {
+    const c = wrap.querySelectorAll(".trend-point")[idx];
+    if (!c) return;
+    popup.innerHTML = pointBreakdownHTML(pts[idx], isToday);
+    popup.hidden = false;
+    const vb = svg.viewBox.baseVal;
+    const cw = svg.clientWidth || vb.width;
+    const chh = svg.clientHeight || vb.height;
+    const px = (+c.dataset.x / vb.width) * cw;
+    const py = (+c.dataset.y / vb.height) * chh;
+    popup.style.left = Math.max(8, Math.min(px + 14, cw - popup.offsetWidth - 8)) + "px";
+    popup.style.top = (py - popup.offsetHeight - 12 < 0 ? py + 14 : py - popup.offsetHeight - 12) + "px";
+  };
+
+  svg.querySelectorAll(".trend-point").forEach((g) => {
+    const cx = g.querySelector("circle").getAttribute("cx");
+    const cy = g.querySelector("circle").getAttribute("cy");
+    g.setAttribute("data-x", cx);
+    g.setAttribute("data-y", cy);
+    const activate = () => {
+      const idx = +g.dataset.idx;
+      const already = !popup.hidden && popup.dataset.idx === String(idx);
+      if (already) { close(); return; }
+      popup.dataset.idx = String(idx);
+      show(idx);
+    };
+    g.addEventListener("click", activate);
+    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } });
+  });
+  document.addEventListener("click", function onDoc(e) {
+    if (!wrap.contains(e.target)) { close(); document.removeEventListener("click", onDoc); }
+  });
+  return close;
 }
 
 // ---- bar chart for tasks + focus stacked ----
@@ -340,28 +380,22 @@ export async function renderInsights(view, alive = () => true) {
             : `<span class="score-delta flat">— same as before</span>`
           }
           <div class="score-verdict">${scoreLabel(score.score)}</div>
-          <p class="score-plain">${plainSummary(score)}</p>
         </div>
       </div>
-      <div class="score-how">
-        <div class="score-how-title">ℹ️ How your score is built</div>
-        <div class="score-categories">
-          ${[
-            ["Tasks", score.parts.tasks],
-            ["Focus", score.parts.focus],
-            ["Goals", score.parts.goals],
-            ["Habits", score.parts.habits],
-            ["Schedule", score.parts.schedule],
-          ].map(([label, val]) => `
-            <div class="cat-row">
-              <span class="cat-label">${label}</span>
-              <span class="cat-desc">${CATEGORY_PLAIN[label]}</span>
-              <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
-              <span class="cat-val">${val != null ? val + "%" : "—"}</span>
-            </div>
-          `).join("")}
-        </div>
-        <div class="score-foot-note">Each area is measured and combined to make your overall score. A higher percentage in an area means that part is going well.</div>
+      <div class="score-categories">
+        ${[
+          ["Tasks", score.parts.tasks],
+          ["Focus", score.parts.focus],
+          ["Goals", score.parts.goals],
+          ["Habits", score.parts.habits],
+          ["Schedule", score.parts.schedule],
+        ].map(([label, val]) => `
+          <div class="cat-row">
+            <span class="cat-label">${label}</span>
+            <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
+            <span class="cat-val">${val != null ? val + "%" : "—"}</span>
+          </div>
+        `).join("")}
       </div>
     </section>
 
@@ -705,4 +739,7 @@ export async function renderInsights(view, alive = () => true) {
     detail.style.display = open ? "none" : "";
     btn.textContent = open ? "View Details" : "Hide Details";
   });
+
+  // Trend point breakdown popups
+  view.querySelectorAll(".trend-point-wrap").forEach((wrap) => wireTrend(wrap, trend.pts, currentPeriod === "today"));
 }
