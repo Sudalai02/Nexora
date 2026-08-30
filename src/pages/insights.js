@@ -228,7 +228,7 @@ function pointBreakdownHTML(p, isToday) {
       <div class="tp-label">${esc(p.label)}</div>
       ${rangeLine}
       <div class="tp-row"><span>Focus</span><b>${fmtFocus(p.focusMin)}</b></div>
-      <div class="tp-note">How it's counted:<br/>${fmtFocus(p.focusMin)} of focus = ${p.value} pts.</div>
+      <div class="tp-note"><b>How it's counted:</b><br/>${fmtFocus(p.focusMin)} of focus = ${p.value} pts.</div>
     `;
   }
   const fromTasks = p.tasks * 30;
@@ -238,7 +238,7 @@ function pointBreakdownHTML(p, isToday) {
     ${rangeLine}
     <div class="tp-row"><span>Tasks completed</span><b>${p.tasks}</b></div>
     <div class="tp-row"><span>Focus time</span><b>${fmtFocus(p.focusMin)}</b></div>
-    <div class="tp-note">How it's counted:<br/>${p.tasks} × 30 (tasks) + ${fromFocus} (focus min) = <b>${p.value}</b>.</div>
+    <div class="tp-note"><b>How it's counted:</b><br/>${p.tasks} × 30 (tasks) + ${fromFocus} (focus min) = <b>${p.value}</b>.</div>
   `;
 }
 
@@ -246,9 +246,9 @@ function pointBreakdownHTML(p, isToday) {
 
 // Overall score = weighted average across available categories.
 function overallBreakdownHTML(o) {
+  const titleMap = { tasks: "Tasks", focus: "Focus", goals: "Goals", habits: "Habits", schedule: "Schedule" };
   const rows = o.weighted.map((w) => {
-    const titleMap = { tasks: "Tasks", focus: "Focus", goals: "Goals", habits: "Habits", schedule: "Schedule" };
-    return `<div class="tp-row"><span>${titleMap[w.key]} × ${w.weight}</span><b>${w.part} × ${w.weight} = ${w.part * w.weight}</b></div>`;
+    return `<div class="tp-row"><span>${titleMap[w.key]}</span><b>${w.part}% × ${w.weight}</b></div>`;
   }).join("");
   const sum = o.weighted.reduce((a, w) => a + w.part * w.weight, 0);
   const missing = ["tasks", "focus", "goals", "habits", "schedule"]
@@ -258,51 +258,72 @@ function overallBreakdownHTML(o) {
     <div class="tp-label">Overall score ${o.score}/100</div>
     ${rows}
     <div class="tp-note">
-      Sum: ${sum} ÷ total weight ${o.totalWeight} = <b>${o.score}</b>.
+      <b>How it's counted:</b><br/>
+      Sum ${o.weighted.map((w) => `${w.part}×${w.weight}`).join(" + ")} = ${sum}<br/>
+      ${sum} ÷ total weight ${o.totalWeight} = <b>${o.score}</b>.
       ${missing.length ? `<br/>No data for: ${missing.join(", ")} (excluded from the average).` : ""}
     </div>
   `;
 }
 
-function catRows(list) {
-  return list.map((x) => `<div class="tp-row"><span>${esc(x.title)}</span><b>${x.pct != null ? x.pct + "%" : "—"}</b></div>`).join("");
+function catRows(list, fmt) {
+  return list.map((x) => `<div class="tp-row"><span>${esc(x.title)}</span><b>${fmt ? fmt(x) : (x.pct != null ? x.pct + "%" : "—")}</b></div>`).join("");
 }
 
 // Explained calculation per category, using the exact live numbers.
 function categoryBreakdownHTML(key, b, periodRange, periodLabel) {
-  const header = `<div class="tp-label">${key[0].toUpperCase() + key.slice(1)} — ${esc(periodRange)}</div>`;
+  const header = `<div class="tp-label">${key[0].toUpperCase() + key.slice(1)}</div><div class="tp-range">${esc(periodRange)}</div>`;
   if (key === "tasks") {
     if (b.fallback) {
       return header + `
-        <div class="tp-note">No tasks were due this period, so we use a base ${b.part}% when at least one task was completed.</div>`;
+        <div class="tp-row"><span>Base score</span><b>${b.part}%</b></div>
+        <div class="tp-note">
+          <b>How it's counted:</b><br/>
+          No tasks were due this period. We use a base ${b.part}% when at least one task was completed.
+        </div>`;
     }
     return header + `
       <div class="tp-row"><span>Completion rate</span><b>${b.completionRate != null ? b.completionRate + "%" : "—"}</b></div>
-      <div class="tp-note">Completed tasks out of all tasks due in this period.<br/><b>${b.completionRate ?? "—"}%</b> of due tasks finished.</div>`;
+      <div class="tp-note">
+        <b>How it's counted:</b><br/>
+        % of due tasks that were finished. Here it's <b>${b.completionRate ?? "—"}%</b>.
+      </div>`;
   }
   if (key === "focus") {
     return header + `
       <div class="tp-row"><span>Focus time</span><b>${fmtFocus(b.focusMinutes)}</b></div>
-      <div class="tp-row"><span>Target for ${b.days} days</span><b>${fmtFocus(b.focusTarget)}</b></div>
-      <div class="tp-note">Focus % = focus time ÷ target × 100 = <b>${b.part}%</b>.<br/>Target = ${b.days} days × 45 min.</div>`;
+      <div class="tp-row"><span>Target (${b.days} days)</span><b>${fmtFocus(b.focusTarget)}</b></div>
+      <div class="tp-note">
+        <b>How it's counted:</b><br/>
+        focus ÷ target × 100 = ${fmtFocus(b.focusMinutes)} ÷ ${fmtFocus(b.focusTarget)} × 100 = <b>${b.part}%</b>.
+      </div>`;
   }
   if (key === "goals") {
     return header + `
-      ${b.list.length ? catRows(b.list.slice(0, 5)) : ""}
-      <div class="tp-note">Goal score = average of each goal's progress.<br/>Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.</div>`;
+      ${b.list.length ? catRows(b.list.slice(0, 5)) : `<div class="tp-row"><span>No goals</span><b>—</b></div>`}
+      <div class="tp-note">
+        <b>How it's counted:</b><br/>
+        Average of each goal's progress. Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.
+      </div>`;
   }
   if (key === "habits") {
     return header + `
       ${b.list.length ? b.list.slice(0, 5).map((h) =>
-        `<div class="tp-row"><span>${esc(h.title)}</span><b>${h.done} / ${h.scheduled} (${h.pct}%)</b></div>`).join("") : ""}
-      <div class="tp-note">Habit score = average of each habit's done ÷ scheduled.<br/>Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.</div>`;
+        `<div class="tp-row"><span>${esc(h.title)}</span><b>${h.done} / ${h.scheduled} (${h.pct}%)</b></div>`).join("") : `<div class="tp-row"><span>No habits</span><b>—</b></div>`}
+      <div class="tp-note">
+        <b>How it's counted:</b><br/>
+        Average of each habit's done ÷ scheduled. Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.
+      </div>`;
   }
   if (key === "schedule") {
     const lifted = b.sessionCount > 0 ? 40 : 20;
     return header + `
       <div class="tp-row"><span>Completion rate</span><b>${b.completionRate != null ? b.completionRate + "%" : "—"}</b></div>
       <div class="tp-row"><span>${b.sessionCount > 0 ? "Had focus sessions" : "No focus sessions"}</span><b>+${lifted}</b></div>
-      <div class="tp-note">Schedule = completion rate × 0.6 + ${lifted}<br/>= <b>${b.part}%</b> (capped at 100).</div>`;
+      <div class="tp-note">
+        <b>How it's counted:</b><br/>
+        ${b.completionRate != null ? `${b.completionRate}×0.6 + ${lifted} = ${b.part}%` : "—"} (capped at 100).
+      </div>`;
   }
   return header;
 }
