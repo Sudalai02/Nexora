@@ -67,27 +67,63 @@ function statusIcon(pct) {
 }
 
 // ---- compute productivity score (weighted) ----
-function computeScore({ stats, prevStats, habitsCons, overdueCount, goalProgressMap }) {
+function computeScore({ stats, prevStats, habitsCons, overdueCount, goalProgressMap, goals }) {
   const focusTarget = Math.max((stats.days || 7) * 45, 60);
   const goalProgVals = goalProgressMap ? Object.values(goalProgressMap).map((g) => g.pct ?? 0) : [];
   const avgGoalProg = goalProgVals.length ? Math.round(goalProgVals.reduce((a, v) => a + v, 0) / goalProgVals.length) : null;
+  const habitsAvg = habitsCons.length
+    ? Math.round(habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length)
+    : null;
+  const schedule = analytics.scheduleScore(stats);
   const parts = {
     tasks: stats.completionRate ?? (stats.tasksCompleted > 0 ? 80 : null),
     focus: pct(stats.focusMinutes, focusTarget),
     goals: avgGoalProg,
-    habits: habitsCons.length
-      ? Math.round(habitsCons.reduce((a, h) => a + (h.pct ?? 0), 0) / habitsCons.length)
-      : null,
-    schedule: analytics.scheduleScore(stats),
+    habits: habitsAvg,
+    schedule,
   };
   const weights = { tasks: 30, focus: 20, goals: 20, habits: 15, schedule: 15 };
   let total = 0, weight = 0;
+  const weighted = [];
   for (const k of Object.keys(weights)) {
     if (parts[k] == null) continue;
+    weighted.push({ key: k, part: parts[k], weight: weights[k] });
     total += parts[k] * weights[k];
     weight += weights[k];
   }
   const score = weight ? Math.round(total / weight) : 0;
+
+  // Raw inputs so the UI can explain each calculation.
+  const breakdown = {
+    tasks: {
+      completionRate: stats.completionRate,
+      tasksCompleted: stats.tasksCompleted,
+      fallback: stats.completionRate == null && stats.tasksCompleted > 0,
+      part: parts.tasks,
+    },
+    focus: {
+      focusMinutes: stats.focusMinutes,
+      focusTarget,
+      days: stats.days || 7,
+      part: parts.focus,
+    },
+    goals: {
+      avg: avgGoalProg,
+      list: goals ? goals.filter((g) => g.status !== "Completed").map((g) => ({ title: g.title, pct: goalProgressMap[g.id]?.pct ?? 0 })) : [],
+      part: parts.goals,
+    },
+    habits: {
+      avg: habitsAvg,
+      list: habitsCons.map((h) => ({ title: h.habit.title, done: h.done, scheduled: h.scheduled, pct: h.pct })),
+      part: parts.habits,
+    },
+    schedule: {
+      completionRate: stats.completionRate,
+      sessionCount: stats.sessionCount,
+      part: schedule,
+    },
+    overall: { score, weighted, totalWeight: weight },
+  };
 
   // Previous period score for delta
   let prevScore = null;
@@ -106,7 +142,7 @@ function computeScore({ stats, prevStats, habitsCons, overdueCount, goalProgress
     prevScore = pW ? Math.round(pT / pW) : null;
   }
 
-  return { score, prevScore, delta: prevScore == null ? null : score - prevScore, parts };
+  return { score, prevScore, delta: prevScore == null ? null : score - prevScore, parts, breakdown };
 }
 
 // ---- SVG trend chart ----
@@ -180,9 +216,17 @@ function fmtFocus(min) {
 }
 
 function pointBreakdownHTML(p, isToday) {
+  let rangeLine = "";
+  if (p.range) {
+    const r = /^\d{4}-\d{2}-\d{2}$/.test(p.range)
+      ? fromISO(p.range).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+      : p.range;
+    if (r !== p.label) rangeLine = `<div class="tp-range">${esc(r)}</div>`;
+  }
   if (isToday || !p.tasks) {
     return `
       <div class="tp-label">${esc(p.label)}</div>
+      ${rangeLine}
       <div class="tp-row"><span>Focus</span><b>${fmtFocus(p.focusMin)}</b></div>
       <div class="tp-note">How it's counted:<br/>${fmtFocus(p.focusMin)} of focus = ${p.value} pts.</div>
     `;
@@ -191,10 +235,111 @@ function pointBreakdownHTML(p, isToday) {
   const fromFocus = p.focusMin;
   return `
     <div class="tp-label">${esc(p.label)}</div>
+    ${rangeLine}
     <div class="tp-row"><span>Tasks completed</span><b>${p.tasks}</b></div>
     <div class="tp-row"><span>Focus time</span><b>${fmtFocus(p.focusMin)}</b></div>
     <div class="tp-note">How it's counted:<br/>${p.tasks} × 30 (tasks) + ${fromFocus} (focus min) = <b>${p.value}</b>.</div>
   `;
+}
+
+// ---- Productivity Health calculation popups ----
+
+// Overall score = weighted average across available categories.
+function overallBreakdownHTML(o) {
+  const rows = o.weighted.map((w) => {
+    const titleMap = { tasks: "Tasks", focus: "Focus", goals: "Goals", habits: "Habits", schedule: "Schedule" };
+    return `<div class="tp-row"><span>${titleMap[w.key]} × ${w.weight}</span><b>${w.part} × ${w.weight} = ${w.part * w.weight}</b></div>`;
+  }).join("");
+  const sum = o.weighted.reduce((a, w) => a + w.part * w.weight, 0);
+  const missing = ["tasks", "focus", "goals", "habits", "schedule"]
+    .filter((k) => !o.weighted.find((w) => w.key === k))
+    .map((k) => ({ tasks: "Tasks", focus: "Focus", goals: "Goals", habits: "Habits", schedule: "Schedule" }[k]));
+  return `
+    <div class="tp-label">Overall score ${o.score}/100</div>
+    ${rows}
+    <div class="tp-note">
+      Sum: ${sum} ÷ total weight ${o.totalWeight} = <b>${o.score}</b>.
+      ${missing.length ? `<br/>No data for: ${missing.join(", ")} (excluded from the average).` : ""}
+    </div>
+  `;
+}
+
+function catRows(list) {
+  return list.map((x) => `<div class="tp-row"><span>${esc(x.title)}</span><b>${x.pct != null ? x.pct + "%" : "—"}</b></div>`).join("");
+}
+
+// Explained calculation per category, using the exact live numbers.
+function categoryBreakdownHTML(key, b, periodRange, periodLabel) {
+  const header = `<div class="tp-label">${key[0].toUpperCase() + key.slice(1)} — ${esc(periodRange)}</div>`;
+  if (key === "tasks") {
+    if (b.fallback) {
+      return header + `
+        <div class="tp-note">No tasks were due this period, so we use a base ${b.part}% when at least one task was completed.</div>`;
+    }
+    return header + `
+      <div class="tp-row"><span>Completion rate</span><b>${b.completionRate != null ? b.completionRate + "%" : "—"}</b></div>
+      <div class="tp-note">Completed tasks out of all tasks due in this period.<br/><b>${b.completionRate ?? "—"}%</b> of due tasks finished.</div>`;
+  }
+  if (key === "focus") {
+    return header + `
+      <div class="tp-row"><span>Focus time</span><b>${fmtFocus(b.focusMinutes)}</b></div>
+      <div class="tp-row"><span>Target for ${b.days} days</span><b>${fmtFocus(b.focusTarget)}</b></div>
+      <div class="tp-note">Focus % = focus time ÷ target × 100 = <b>${b.part}%</b>.<br/>Target = ${b.days} days × 45 min.</div>`;
+  }
+  if (key === "goals") {
+    return header + `
+      ${b.list.length ? catRows(b.list.slice(0, 5)) : ""}
+      <div class="tp-note">Goal score = average of each goal's progress.<br/>Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.</div>`;
+  }
+  if (key === "habits") {
+    return header + `
+      ${b.list.length ? b.list.slice(0, 5).map((h) =>
+        `<div class="tp-row"><span>${esc(h.title)}</span><b>${h.done} / ${h.scheduled} (${h.pct}%)</b></div>`).join("") : ""}
+      <div class="tp-note">Habit score = average of each habit's done ÷ scheduled.<br/>Average = <b>${b.avg != null ? b.avg + "%" : "—"}</b>.</div>`;
+  }
+  if (key === "schedule") {
+    const lifted = b.sessionCount > 0 ? 40 : 20;
+    return header + `
+      <div class="tp-row"><span>Completion rate</span><b>${b.completionRate != null ? b.completionRate + "%" : "—"}</b></div>
+      <div class="tp-row"><span>${b.sessionCount > 0 ? "Had focus sessions" : "No focus sessions"}</span><b>+${lifted}</b></div>
+      <div class="tp-note">Schedule = completion rate × 0.6 + ${lifted}<br/>= <b>${b.part}%</b> (capped at 100).</div>`;
+  }
+  return header;
+}
+
+// Shared popup: render content near a target element and close on outside click.
+function heroPopupHTML(cat, breakdown, periodRange, periodLabelText) {
+  if (cat === "overall") return overallBreakdownHTML(breakdown.overall);
+  const b = breakdown[cat];
+  return b ? categoryBreakdownHTML(cat, b, periodRange, periodLabelText) : "";
+}
+
+function makePopup(sectionEl, anchor, html) {
+  const popup = sectionEl.querySelector(".info-popup");
+  if (!popup) return;
+  popup.innerHTML = html;
+  popup.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const srect = sectionEl.getBoundingClientRect();
+  const left = Math.max(8, Math.min(rect.left - srect.left, srect.width - popup.offsetWidth - 8));
+  const above = rect.top - srect.top - popup.offsetHeight - 8;
+  popup.style.left = left + "px";
+  popup.style.top = (above >= 0 ? above : rect.bottom - srect.top + 8) + "px";
+}
+
+function attachClick(sectionEl, selector, handler) {
+  sectionEl.querySelectorAll(selector).forEach((el) => {
+    const activate = () => {
+      const popup = sectionEl.querySelector(".info-popup");
+      const open = popup && !popup.hidden && popup.dataset.for === el.getAttribute("data-cat");
+      if (open) { popup.hidden = true; popup.dataset.for = ""; return; }
+      handler(el);
+      const p = sectionEl.querySelector(".info-popup");
+      if (p) p.dataset.for = el.getAttribute("data-cat");
+    };
+    el.addEventListener("click", activate);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } });
+  });
 }
 
 function wireTrend(wrap, pts, isToday) {
@@ -298,7 +443,7 @@ export async function renderInsights(view, alive = () => true) {
   const overdueTasks = currentPeriod === "today"
     ? tasksRaw.filter((t) => t.dueDate === today && OPEN.includes(t.status))
     : tasksRaw.filter((t) => t.dueDate && t.dueDate < today && OPEN.includes(t.status));
-  const score = computeScore({ stats, prevStats, habitsCons, overdueCount: overdueTasks.length, goalProgressMap: gProg });
+  const score = computeScore({ stats, prevStats, habitsCons, overdueCount: overdueTasks.length, goalProgressMap: gProg, goals });
 
   // Trend data
   const trend = await analytics.trendData(currentPeriod);
@@ -344,6 +489,15 @@ export async function renderInsights(view, alive = () => true) {
   const streakMap = {};
   for (const s of streaks) streakMap[s.habit.id] = s.streak;
 
+  // Period date range shown on the Productivity Health cards.
+  const fmtMyDate = (iso) => {
+    const d = fromISO(iso);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+  const periodRange = stats.start && stats.end
+    ? (stats.start === stats.end ? fmtMyDate(stats.start) : `${fmtMyDate(stats.start)} – ${fmtMyDate(stats.end)}`)
+    : periodLabel(currentPeriod);
+
   // ==================== RENDER ====================
   view.innerHTML = `
     <!-- HEADER -->
@@ -366,10 +520,11 @@ export async function renderInsights(view, alive = () => true) {
     <section class="card insight-hero">
       <div class="insight-hero-head">
         <div class="eyebrow">PRODUCTIVITY HEALTH</div>
+        <div class="eyebrow-range">${periodLabel(currentPeriod)} · ${esc(periodRange)}</div>
       </div>
       <div class="insight-hero-body">
         <div class="score-ring-wrap">
-          <div class="score-ring ${scoreClass(score.score)}" style="--p:${score.score};">
+          <div class="score-ring ${scoreClass(score.score)}" style="--p:${score.score};" role="button" tabindex="0" data-cat="overall" aria-label="How the overall score is calculated">
             <span class="score-num">${score.score}</span>
             <span class="score-of">/100</span>
           </div>
@@ -380,6 +535,8 @@ export async function renderInsights(view, alive = () => true) {
             : `<span class="score-delta flat">— same as before</span>`
           }
           <div class="score-verdict">${scoreLabel(score.score)}</div>
+          <div class="score-range">Overall for ${periodLabel(currentPeriod).toLowerCase()} · ${esc(periodRange)}</div>
+          <div class="hero-hint">Tap the score or any category to see how it's counted</div>
         </div>
       </div>
       <div class="score-categories">
@@ -390,13 +547,15 @@ export async function renderInsights(view, alive = () => true) {
           ["Habits", score.parts.habits],
           ["Schedule", score.parts.schedule],
         ].map(([label, val]) => `
-          <div class="cat-row">
-            <span class="cat-label">${label}</span>
+          <div class="cat-row" role="button" tabindex="0" data-cat="${label.toLowerCase()}" aria-label="How the ${label} score is calculated">
+            <span class="cat-label">${label} <span class="cat-info">ℹ</span></span>
             <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
             <span class="cat-val">${val != null ? val + "%" : "—"}</span>
           </div>
         `).join("")}
+        <div class="cat-period-line">Period: ${esc(periodRange)}</div>
       </div>
+      <div class="info-popup" role="dialog" aria-live="polite" hidden></div>
     </section>
 
     <!-- NEEDS ATTENTION -->
@@ -742,4 +901,24 @@ export async function renderInsights(view, alive = () => true) {
 
   // Trend point breakdown popups
   view.querySelectorAll(".trend-point-wrap").forEach((wrap) => wireTrend(wrap, trend.pts, currentPeriod === "today"));
+
+  // Productivity Health calculation popups
+  const hero = view.querySelector(".insight-hero");
+  const mkPopup = (el) => makePopup(hero, el, heroPopupHTML(el.getAttribute("data-cat"), score.breakdown, periodRange, periodLabel(currentPeriod)));
+  attachClick(hero, ".cat-row", mkPopup);
+  attachClick(hero, ".score-ring", mkPopup);
+  hero.addEventListener("click", (e) => {
+    if (e.target.closest(".info-popup")) return;
+    if (!e.target.closest(".cat-row") && !e.target.closest(".score-ring")) {
+      const p = hero.querySelector(".info-popup");
+      if (p && !p.hidden) p.hidden = true;
+    }
+  });
+  document.addEventListener("keydown", function onEsc(e) {
+    if (e.key === "Escape") {
+      const p = hero.querySelector(".info-popup");
+      if (p) p.hidden = true;
+      document.removeEventListener("keydown", onEsc);
+    }
+  });
 }

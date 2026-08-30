@@ -66,29 +66,36 @@ export async function trendData(period) {
   const stats = await rangeStats(days);
   const pts = [];
 
+  const fmtShort = (iso) => {
+    const dt = fromISO(iso);
+    return dt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
+
   if (period === "today") {
     for (let h = 0; h < 24; h++) {
-      if (stats.hourBuckets[h]) pts.push({ label: `${h}:00`, value: stats.hourBuckets[h], tasks: 0, focusMin: stats.hourBuckets[h] });
+      if (stats.hourBuckets[h]) pts.push({ label: `${h}:00`, value: stats.hourBuckets[h], tasks: 0, focusMin: stats.hourBuckets[h], date: stats.end, range: stats.end });
     }
   } else if (period === "week") {
     for (const d of stats.perDay) {
       const dt = fromISO(d.date);
-      pts.push({ label: dt.toLocaleDateString(undefined, { weekday: "short" }), value: d.completed * 30 + d.focusMin, tasks: d.completed, focusMin: d.focusMin });
+      pts.push({ label: dt.toLocaleDateString(undefined, { weekday: "short" }), value: d.completed * 30 + d.focusMin, tasks: d.completed, focusMin: d.focusMin, date: d.date, range: d.date });
     }
   } else if (period === "month") {
     for (let i = 0; i < stats.perDay.length; i += 7) {
       const chunk = stats.perDay.slice(i, i + 7);
       const tasks = chunk.reduce((a, d) => a + (d.completed || 0), 0);
       const focusMin = chunk.reduce((a, d) => a + (d.focusMin || 0), 0);
-      pts.push({ label: `Wk ${Math.floor(i / 7) + 1}`, value: tasks * 30 + focusMin, tasks, focusMin });
+      const first = chunk[0]?.date, last = chunk[chunk.length - 1]?.date;
+      pts.push({ label: `Wk ${Math.floor(i / 7) + 1}`, value: tasks * 30 + focusMin, tasks, focusMin, date: first, range: first && last ? `${fmtShort(first)} – ${fmtShort(last)}` : first });
     }
   } else {
     for (let i = 0; i < stats.perDay.length; i += 14) {
       const chunk = stats.perDay.slice(i, i + 14);
       const tasks = chunk.reduce((a, d) => a + (d.completed || 0), 0);
       const focusMin = chunk.reduce((a, d) => a + (d.focusMin || 0), 0);
+      const first = chunk[0]?.date, last = chunk[chunk.length - 1]?.date;
       const start = chunk[0]?.date?.slice(5) || "";
-      pts.push({ label: start, value: tasks * 30 + focusMin, tasks, focusMin });
+      pts.push({ label: start, value: tasks * 30 + focusMin, tasks, focusMin, date: first, range: first && last ? `${fmtShort(first)} – ${fmtShort(last)}` : first });
     }
   }
   return { pts, stats };
