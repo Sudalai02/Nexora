@@ -205,9 +205,13 @@ export function aiInsightForPeriod(stats, habitsCons, risks, score) {
 }
 
 // ---- Schedule score estimate ----
+// Schedule Score = (Completion Rate × 0.6) + (Focus Session Rate × 0.2) + (On-Time Rate × 0.2)
+// All components are 0–100 percentages; the result is capped at 100.
 export function scheduleScore(stats) {
   if (stats.completionRate == null) return null;
-  return clamp(Math.round(stats.completionRate * 0.6 + (stats.sessionCount > 0 ? 40 : 20)), 0, 100);
+  const focus = stats.focusSessionRate ?? 0;
+  const onTime = stats.onTimeRate ?? 0;
+  return clamp(Math.round(stats.completionRate * 0.6 + focus * 0.2 + onTime * 0.2), 0, 100);
 }
 
 export async function rangeStats(days, offset = 0) {
@@ -235,6 +239,7 @@ export async function rangeStats(days, offset = 0) {
   let deepMinutes = 0;
   let sessionCount = 0;
   const hourBuckets = new Array(24).fill(0); // minutes per start-hour
+  const focusDays = new Set();
   for (const s of sessions) {
     if (s.type !== "focus") continue;
     const day = s.startedAt.slice(0, 10);
@@ -242,10 +247,20 @@ export async function rangeStats(days, offset = 0) {
     const mins = Math.round((s.durationSeconds || 0) / 60);
     focusMinutes += mins;
     sessionCount += 1;
+    focusDays.add(day);
     if ((s.plannedMinutes || 0) >= 45) deepMinutes += mins;
     const h = new Date(s.startedAt).getHours();
     hourBuckets[h] += mins;
   }
+
+  // Focus session rate: % of days in the window with at least one focus session.
+  const focusSessionRate = days ? Math.round((focusDays.size / days) * 100) : null;
+
+  // On-time rate: of tasks completed inside the window that had a due date,
+  // how many were finished on or before their due date.
+  const completedWithDue = completedIn.filter((t) => t.dueDate);
+  const onTime = completedWithDue.filter((t) => t.completedAt.slice(0, 10) <= t.dueDate).length;
+  const onTimeRate = completedWithDue.length ? Math.round((onTime / completedWithDue.length) * 100) : null;
 
   // Avg task duration from actuals
   const withActual = completedIn.filter((t) => t.actualMinutes);
@@ -273,6 +288,8 @@ export async function rangeStats(days, offset = 0) {
     focusMinutes,
     deepMinutes,
     sessionCount,
+    focusSessionRate,
+    onTimeRate,
     avgTaskMinutes,
     perDay,
     hourBuckets,

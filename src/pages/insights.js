@@ -119,6 +119,8 @@ function computeScore({ stats, prevStats, habitsCons, overdueCount, goalProgress
     },
     schedule: {
       completionRate: stats.completionRate,
+      focusSessionRate: stats.focusSessionRate,
+      onTimeRate: stats.onTimeRate,
       sessionCount: stats.sessionCount,
       part: schedule,
     },
@@ -316,13 +318,23 @@ function categoryBreakdownHTML(key, b, periodRange, periodLabel) {
       </div>`;
   }
   if (key === "schedule") {
-    const lifted = b.sessionCount > 0 ? 40 : 20;
+    if (b.completionRate == null) {
+      return header + `
+        <div class="tp-note"><b>Schedule Score</b><br/>—<br/>No schedule activity yet.</div>`;
+    }
+    const cr = b.completionRate;
+    const fsr = b.focusSessionRate ?? 0;
+    const otr = b.onTimeRate ?? 0;
+    const allZero = cr === 0 && fsr === 0 && otr === 0;
+    const math = `${cr}×0.6 + ${fsr}×0.2 + ${otr}×0.2`;
     return header + `
-      <div class="tp-row"><span>Completion rate</span><b>${b.completionRate != null ? b.completionRate + "%" : "—"}</b></div>
-      <div class="tp-row"><span>${b.sessionCount > 0 ? "Had focus sessions" : "No focus sessions"}</span><b>+${lifted}</b></div>
+      <div class="tp-row"><span>Task completion</span><b>${cr}%</b></div>
+      <div class="tp-row"><span>Focus sessions</span><b>${fsr}%</b></div>
+      <div class="tp-row"><span>On-time tasks</span><b>${otr}%</b></div>
+      ${allZero ? `<div class="tp-note">No activity was completed this week.</div>` : ""}
       <div class="tp-note">
         <b>How it's counted:</b><br/>
-        ${b.completionRate != null ? `${b.completionRate}×0.6 + ${lifted} = ${b.part}%` : "—"} (capped at 100).
+        ${math} = ${b.part}% (capped at 100).
       </div>`;
   }
   return header;
