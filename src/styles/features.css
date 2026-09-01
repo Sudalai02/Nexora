@@ -92,8 +92,10 @@
 .project-card { cursor: pointer; position: relative; transition: box-shadow 0.15s ease; }
 .project-card:hover { box-shadow: var(--shadow-md); }
 .project-card-color { position: absolute; top: 0; left: 0; right: 0; height: 3px; border-radius: 3px 3px 0 0; }
-.project-card-menu { position: absolute; top: 10px; right: 10px; opacity: 0; transition: opacity 0.12s ease; }
-.project-card:hover .project-card-menu { opacity: 1; }
+.project-card-top-right { display: flex; align-items: flex-start; gap: var(--sp-2); margin-left: var(--sp-3); }
+.project-card-menu { flex: 0 0 auto; height: 28px; width: 28px; color: var(--graphite-dim); }
+.project-card-menu:hover { color: var(--graphite); background: var(--paper-dark); }
+.project-card-name-wrap { min-width: 0; }
 
 /* Project detail */
 .back-link {

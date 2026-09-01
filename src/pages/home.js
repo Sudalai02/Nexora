@@ -714,16 +714,22 @@ function flowBody(item, ctx) {
   if (item.kind === "task") {
     const t = taskService.decorate([item.ref])[0];
     const reasons = reasonsFor(t, projectNameOf(t.projectId));
+    const dueLabel = item.overdue
+      ? `<span class="meta-chip overdue">⏰ Overdue</span>`
+      : t.dueDate === today
+        ? `<span class="meta-chip due">⏰ Due today</span>`
+        : t.dueDate
+          ? `<span class="meta-chip">Due ${fmtDate(t.dueDate)}</span>`
+          : "";
     return `
       <div class="flow-eyebrow">${icon("spark")} Do this now</div>
       <div class="now-task">${escapeHtml(t.title)}</div>
       <div class="now-meta-row">
-        ${t.priority ? `<span>${priorityEmoji(t.priority)} ${t.priority}${t.overdue ? " · overdue" : ""}</span>` : ""}
-        <span>⏱ ~<span class="num">${t.estimatedMinutes}m</span></span>
-        ${projectNameOf(t.projectId) ? `<span class="tag">${projectNameOf(t.projectId)}</span>` : ""}
-        ${goalNameOf(t.goalId) ? `<span>🎯 ${goalNameOf(t.goalId)}</span>` : ""}
-        ${t.dueDate === today && !item.overdue ? "<span>⏰ Due today</span>" : ""}
+        ${t.priority ? `<span class="prio-${t.priority.toLowerCase()}">${priorityEmoji(t.priority)} ${t.priority}</span>` : ""}
+        <span>⏱ <span class="num">~${t.estimatedMinutes}m</span></span>
+        ${dueLabel}
       </div>
+      <div class="now-context">${projectNameOf(t.projectId) ? `<span class="tag">${projectNameOf(t.projectId)}</span>` : ""}${projectNameOf(t.projectId) && goalNameOf(t.goalId) ? " · " : ""}${goalNameOf(t.goalId) ? `<span class="now-context-goal">${goalNameOf(t.goalId)}</span>` : ""}</div>
       <div class="now-why">
         <div class="now-why-label">Why this now</div>
         <ul>${reasons.map((r) => `<li>${r}</li>`).join("")}</ul>

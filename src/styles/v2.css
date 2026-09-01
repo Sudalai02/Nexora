@@ -1537,6 +1537,39 @@ html.dark .home-tagline { color: #D8D4CB; }
 html.dark .hero-progress-top { color: #A8A49C; }
 html.dark .hero-stat { color: #E0DCD4; }
 
+/* ============ HOME: NOW CARD META (cleaner) ============ */
+.now-card .now-meta-row { gap: var(--sp-3); flex-wrap: wrap; }
+.now-card .now-meta-row .prio-urgent { color: #FF8A80; }
+.now-card .now-meta-row .prio-high   { color: #F4A27A; }
+.now-card .now-meta-row .prio-medium { color: #F4C07A; }
+.now-card .now-meta-row .prio-low    { color: #C9C5BC; }
+.now-card .now-meta-row .prio-urgent, .now-card .now-meta-row .prio-high,
+.now-card .now-meta-row .prio-medium, .now-card .now-meta-row .prio-low {
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: var(--r-full);
+  background: rgba(244,241,236,0.08);
+}
+.meta-chip {
+  display: inline-flex; align-items: center;
+  font-weight: 600;
+}
+.meta-chip.overdue { color: #FF8A80; }
+.meta-chip.due { color: #F4C07A; }
+.now-context {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: var(--sp-5);
+  color: #B8B4AC;
+  font-size: 12.5px;
+  position: relative;
+}
+.now-context .now-context-goal {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 300px;
+}
+
 /* ============ HOME HABIT CHIPS (info-only, two lines) ============ */
 .habit-chip {
   display: flex;

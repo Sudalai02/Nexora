@@ -121,11 +121,14 @@ export async function renderProjects(view, alive = () => true) {
       <div class="card project-card" data-open="${p.id}">
         <div class="project-card-color" style="background:${p.color};"></div>
         <div class="project-card-top">
-          <div>
+          <div class="project-card-name-wrap">
             <div class="project-name">${p.name}</div>
             ${goalTruncated ? `<div class="project-goal-link">${icon("goals")} ${goalTruncated}</div>` : `<div class="project-goal-link">No linked goal</div>`}
           </div>
-          ${statusBadge(p.status)}
+          <div class="project-card-top-right">
+            ${statusBadge(p.status)}
+            <button class="icon-btn project-card-menu" data-menu="${p.id}" aria-label="Project actions">${icon("dots")}</button>
+          </div>
         </div>
         ${pipelineHTML(p.status)}
         <div class="project-progress-row-v2">
@@ -136,7 +139,6 @@ export async function renderProjects(view, alive = () => true) {
           <span>${m.done}/${m.total} tasks</span>
           <span>${p.deadline ? `Due ${fmtDate(p.deadline)}` : "No deadline"}</span>
         </div>
-        <button class="icon-btn project-card-menu" data-menu="${p.id}" aria-label="Project actions">${icon("dots")}</button>
       </div>
     `;
   }
