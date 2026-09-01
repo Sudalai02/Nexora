@@ -79,7 +79,7 @@ function dueClass(t, today) {
   return "";
 }
 
-function taskRow(t, projectName, goalTitle, today) {
+function taskRow(t, today) {
   const done = t.status === "Completed";
   const dClass = dueClass(t, today);
   const prio = t.priority || "Medium";
@@ -174,50 +174,6 @@ export async function renderTasks(view, alive = () => true) {
     return [...list].sort(SORTERS[state.sort]);
   }
 
-  function taskGroupsHTML(tasks, projectNameOf, goalTitleOf, today) {
-    if (!tasks.length) return "";
-    const groups = [];
-    const order = [];
-    const seen = new Set();
-    const bucketOf = (t) => {
-      if (t.projectId) return `project:${t.projectId}`;
-      if (t.goalId) return `goal:${t.goalId}`;
-      return "none";
-    };
-    for (const t of tasks) {
-      const key = bucketOf(t);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      groups.push({ key, label: groupLabel(t, projectNameOf, goalTitleOf), items: [] });
-    }
-    const index = new Map(groups.map((g, i) => [g.key, i]));
-    for (const t of tasks) {
-      const key = bucketOf(t);
-      groups[index.get(key)].items.push(t);
-    }
-    return groups
-      .map(
-        (g) => `
-        <div class="task-group-header">
-          <span class="task-group-name">${g.label.name}</span>
-          ${g.label.goal ? `<span class="task-group-goal">${icon("flag")} ${g.label.goal}</span>` : ""}
-          <span class="task-group-count">${g.items.length}</span>
-        </div>
-        ${g.items.map((t) => taskRow(t, projectNameOf(t.projectId), goalTitleOf(t.goalId), today)).join("")}`
-      )
-      .join("");
-  }
-
-  function groupLabel(t, projectNameOf, goalTitleOf) {
-    if (t.projectId) {
-      const name = projectNameOf(t.projectId) || "Project";
-      const goal = t.goalId ? goalTitleOf(t.goalId) : (projects.find((p) => p.id === t.projectId)?.goalId ? goalTitleOf(projects.find((p) => p.id === t.projectId).goalId) : null);
-      return { name, goal };
-    }
-    if (t.goalId) return { name: "No project", goal: goalTitleOf(t.goalId) };
-    return { name: "Inbox", goal: null };
-  }
-
   function draw() {
     const list = filtered();
     const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
@@ -300,7 +256,7 @@ export async function renderTasks(view, alive = () => true) {
       <div class="card card-flush">
         <div class="task-list">
           ${pageItems.length
-            ? taskGroupsHTML(pageItems, projectNameOf, goalTitleOf, today)
+            ? pageItems.map((t) => taskRow(t, today)).join("")
             : `<div class="empty-state"><h3>Nothing here</h3><p>No tasks match these filters.</p></div>`}
         </div>
       </div>
