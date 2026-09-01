@@ -371,6 +371,7 @@ export async function renderHome(view, alive = () => true) {
           <div class="flow-nav-v2">
             <button class="btn btn-sm btn-ghost" id="reschedule-btn" ${current.kind !== "task" ? "hidden" : ""}>Reschedule</button>
             <span class="flow-dots-v2" id="flow-dots"></span>
+            <button class="btn btn-sm btn-ghost" id="flow-next-btn">Next</button>
           </div>
         </div>`
               : `
@@ -578,6 +579,8 @@ export async function renderHome(view, alive = () => true) {
   view.querySelector("#reschedule-btn")?.addEventListener("click", () => {
     window.location.hash = "#/tasks";
   });
+
+  view.querySelector("#flow-next-btn")?.addEventListener("click", advance);
 
   // Render flow dots
   const dotsEl = view.querySelector("#flow-dots");

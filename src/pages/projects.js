@@ -130,7 +130,7 @@ export async function renderProjects(view, alive = () => true) {
         ${pipelineHTML(p.status)}
         <div class="project-progress-row-v2">
           <div class="progress-track" style="flex:1;"><div class="progress-fill" style="width:${pctVal}%"></div></div>
-          <span class="project-progress-pct-inline num">${pct === "—" ? "—" : `${pctVal}%`}</span>
+          <span class="project-progress-pct-inline num">${m.pct == null ? "—" : `${pctVal}%`}</span>
         </div>
         <div class="project-card-footer">
           <span>${m.done}/${m.total} tasks</span>

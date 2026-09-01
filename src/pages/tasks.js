@@ -83,7 +83,6 @@ function taskRow(t, projectName, goalTitle, today) {
   const done = t.status === "Completed";
   const dClass = dueClass(t, today);
   const prio = t.priority || "Medium";
-  const prioBadge = `prio-${prio.toLowerCase()}`;
   const timeRange = t.startTime ? (t.endTime ? `${t.startTime}–${t.endTime}` : t.startTime) : null;
   return `
     <div class="task-row-v2" data-edit="${t.id}" role="button" tabindex="0">
