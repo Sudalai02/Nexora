@@ -1481,7 +1481,16 @@
 .task-row-v2 .task-row-body { flex: 1; min-width: 0; }
 .task-row-v2 .task-row-title { font-size: 14px; font-weight: 500; color: var(--ink); }
 .task-row-v2 .task-row-title.done { text-decoration: line-through; color: var(--graphite-dim); }
-.task-row-v2 .task-row-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 3px; flex-wrap: wrap; }
+.task-row-v2 .task-row-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 4px; flex-wrap: wrap; }
+.task-row-v2 .task-row-context {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 12px; color: var(--graphite-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; line-height: 1.45;
+}
+.task-row-v2 .task-row-context.goal { color: var(--graphite); font-weight: 500; margin-top: 2px; }
+.task-row-v2 .task-row-context.proj { margin-top: 1px; }
+.task-row-v2 .task-row-context .nav-icon { width: 13px; height: 13px; background-color: currentColor; flex-shrink: 0; }
 .task-row-v2 .task-row-due { font-size: 12px; color: var(--graphite-dim); }
 .task-row-v2 .task-row-due.overdue { color: var(--danger); font-weight: 600; }
 .task-row-v2 .task-row-due.today { color: var(--ember); font-weight: 600; }

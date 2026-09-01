@@ -79,11 +79,13 @@ function dueClass(t, today) {
   return "";
 }
 
-function taskRow(t, today) {
+function taskRow(t, goalTitle, projectName, today) {
   const done = t.status === "Completed";
   const dClass = dueClass(t, today);
   const prio = t.priority || "Medium";
   const timeRange = t.startTime ? (t.endTime ? `${t.startTime}–${t.endTime}` : t.startTime) : null;
+  const goalLine = goalTitle ? `<div class="task-row-context goal">${icon("flag")} ${goalTitle}</div>` : "";
+  const projLine = projectName ? `<div class="task-row-context proj">${icon("folder")} ${projectName}</div>` : "";
   return `
     <div class="task-row-v2" data-edit="${t.id}" role="button" tabindex="0">
       <button class="check-lg ${done ? "checked" : ""}" data-toggle="${t.id}" aria-label="${done ? "Reopen" : "Complete"} task">
@@ -92,6 +94,8 @@ function taskRow(t, today) {
       <span class="priority-dot ${priorityDotClass(t.priority)}"></span>
       <div class="task-row-body">
         <div class="task-row-title ${done ? "done" : ""}">${t.title}</div>
+        ${goalLine}
+        ${projLine}
         <div class="task-row-meta">
           ${t.dueDate ? `<span class="task-row-due ${dClass}">${fmtDue(t.dueDate)}</span>` : ""}
           ${timeRange ? `<span class="task-time">${icon("clock")} ${timeRange}</span>` : ""}
@@ -256,7 +260,7 @@ export async function renderTasks(view, alive = () => true) {
       <div class="card card-flush">
         <div class="task-list">
           ${pageItems.length
-            ? pageItems.map((t) => taskRow(t, today)).join("")
+            ? pageItems.map((t) => taskRow(t, goalTitleOf(t.goalId), projectNameOf(t.projectId), today)).join("")
             : `<div class="empty-state"><h3>Nothing here</h3><p>No tasks match these filters.</p></div>`}
         </div>
       </div>
