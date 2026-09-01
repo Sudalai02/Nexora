@@ -1558,17 +1558,23 @@ html.dark .hero-stat { color: #E0DCD4; }
 .meta-chip.due { color: #F4C07A; }
 .now-context {
   display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: var(--sp-5);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  margin: var(--sp-3) 0 var(--sp-5);
   color: #B8B4AC;
   font-size: 12.5px;
   position: relative;
 }
-.now-context .now-context-goal {
+.now-context .now-context-goal,
+.now-context .now-context-proj {
+  display: flex; align-items: center; gap: 6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 300px;
+  max-width: 100%;
 }
+.now-context .now-context-goal { color: #E7E3DB; font-weight: 500; }
+.now-context .now-context-goal .nav-icon,
+.now-context .now-context-proj .nav-icon { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* ============ HOME HABIT CHIPS (info-only, two lines) ============ */
 .habit-chip {

@@ -729,7 +729,10 @@ function flowBody(item, ctx) {
         <span>⏱ <span class="num">~${t.estimatedMinutes}m</span></span>
         ${dueLabel}
       </div>
-      <div class="now-context">${projectNameOf(t.projectId) ? `<span class="tag">${projectNameOf(t.projectId)}</span>` : ""}${projectNameOf(t.projectId) && goalNameOf(t.goalId) ? " · " : ""}${goalNameOf(t.goalId) ? `<span class="now-context-goal">${goalNameOf(t.goalId)}</span>` : ""}</div>
+      <div class="now-context">
+        ${goalNameOf(t.goalId) ? `<span class="now-context-goal">${icon("flag")} ${escapeHtml(goalNameOf(t.goalId))}</span>` : ""}
+        ${projectNameOf(t.projectId) ? `<span class="now-context-proj">${icon("folder")} ${escapeHtml(projectNameOf(t.projectId))}</span>` : ""}
+      </div>
       <div class="now-why">
         <div class="now-why-label">Why this now</div>
         <ul>${reasons.map((r) => `<li>${r}</li>`).join("")}</ul>

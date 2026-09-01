@@ -124,7 +124,7 @@ function buildResults(data, q, moduleFilter) {
         ${t.projectId ? `<span class="tag">${esc(data.projectNameOf(t.projectId) || "")}</span>` : ""}
         ${t.goalId ? `<span>${icon("flag")} ${esc(data.goalNameOf(t.goalId) || "")}</span>` : ""}
       `,
-        "#/tasks",
+        `#/tasks?id=${t.id}`,
         t.updatedAt
       );
     }
@@ -161,7 +161,7 @@ function buildResults(data, q, moduleFilter) {
         <span>${esc(g.priority)}</span>
         ${g.targetDate ? `<span>Target ${esc(g.targetDate)}</span>` : "<span>No target date</span>"}
       `,
-        "#/goals",
+        `#/goals?id=${g.id}`,
         g.createdAt
       );
     }
@@ -180,7 +180,7 @@ function buildResults(data, q, moduleFilter) {
         <span>${esc(h.timeOfDay)}</span>
         <span>${esc(h.durationMinutes)} min</span>
       `,
-        "#/goals",
+        `#/goals?habit=${h.id}`,
         h.createdAt
       );
     }
@@ -219,7 +219,7 @@ function buildResults(data, q, moduleFilter) {
         <span class="badge badge-${e.type === "deadline" ? "ember" : e.type === "focus" ? "focus" : "neutral"}">${esc(TYPE_LABEL[e.type] || e.type)}</span>
         <span>${esc(e.date)} · ${disp}:${String(mm).padStart(2, "0")} ${ampm}</span>
       `,
-        "#/calendar",
+        `#/calendar?event=${e.id}`,
         e.date
       );
     }

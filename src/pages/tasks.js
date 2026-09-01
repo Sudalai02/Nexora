@@ -272,6 +272,16 @@ export async function renderTasks(view, alive = () => true) {
     draw();
   }
 
+  async function openEditor(id) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const result = await taskModal(projects, goals, task);
+    if (!result) return;
+    Object.assign(task, await taskService.updateTask(id, result));
+    toast("Task updated");
+    draw();
+  }
+
   function wire(pageItems) {
     view.querySelectorAll("[data-range]").forEach((btn) =>
       btn.addEventListener("click", () => {
@@ -346,14 +356,6 @@ export async function renderTasks(view, alive = () => true) {
     );
 
     // ---- edit ----
-    async function openEditor(id) {
-      const task = tasks.find((t) => t.id === id);
-      const result = await taskModal(projects, goals, task);
-      if (!result) return;
-      Object.assign(task, await taskService.updateTask(id, result));
-      toast("Task updated");
-      draw();
-    }
     view.querySelectorAll("[data-edit]").forEach((row) =>
       row.addEventListener("click", () => openEditor(row.dataset.edit))
     );
@@ -370,6 +372,11 @@ export async function renderTasks(view, alive = () => true) {
   }
 
   draw();
+
+  const openTaskId = new URLSearchParams(window.location.hash.split("?")[1] || "").get("id");
+  if (openTaskId && tasks.find((t) => t.id === openTaskId)) {
+    openEditor(openTaskId);
+  }
 }
 
 // ---------------- task form ----------------

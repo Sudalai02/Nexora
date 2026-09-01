@@ -611,4 +611,13 @@ export async function renderGoals(view, alive = () => true) {
   }
 
   draw();
+
+  const params = new URLSearchParams(window.location.hash.split("?")[1] || "");
+  const goalId = params.get("id");
+  const habitId = params.get("habit");
+  if (goalId && goals.find((g) => g.id === goalId)) {
+    view.querySelector(`[data-edit-goal="${CSS.escape(goalId)}"]`)?.click();
+  } else if (habitId) {
+    view.querySelector(`[data-edit-habit="${CSS.escape(habitId)}"]`)?.click();
+  }
 }
