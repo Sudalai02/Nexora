@@ -128,31 +128,34 @@ export async function renderGoals(view, alive = () => true) {
           : g.status === "In Progress"
             ? "focus"
             : "neutral";
+    const prioClass = { Urgent: "p-urgent", High: "p-high", Medium: "p-medium", Low: "p-low" }[g.priority] || "p-low";
     return `
       <div class="card goal-card">
-        <div class="goal-card-top">
-          <div>
-            <div class="goal-title">${g.title}</div>
-            <div class="goal-desc">${g.description}</div>
-            <div class="goal-target">${icon("flag", "")} Target: ${g.targetDate ? fmtDate(g.targetDate) : "no date"} · ${g.category} · ${g.priority}</div>
+        <div class="goal-card-with-prio">
+          <span class="goal-prio-edge ${prioClass}" aria-hidden="true"></span>
+          <div style="flex:1; min-width:0;">
+            <div class="goal-card-top">
+              <div>
+                <div class="goal-title">${g.title}</div>
+                <div class="goal-desc-truncated">${g.description}</div>
+                <div class="goal-target"><span class="goal-priority-dot ${prioClass}"></span> ${icon("flag", "")} ${g.targetDate ? fmtDate(g.targetDate) : "no date"} · ${g.category} · <span class="prio-${g.priority.toLowerCase()}">${g.priority}</span></div>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="badge badge-${badge}">${g.status}</span>
+                <button class="icon-btn" data-edit-goal="${g.id}" aria-label="Edit goal">${icon("dots")}</button>
+              </div>
+            </div>
+            <div class="progress-track-slim" style="margin-top:var(--sp-3);"><div class="progress-fill-slim" style="width:${pct}%"></div></div>
+            <div class="goal-plan-chain">
+              ${(g.milestones || [])
+                .map(
+                  (step, i) => `
+                <button class="chain-step ${step.done ? "done" : ""}" data-ms="${g.id}:${i}" style="cursor:pointer;">${step.done ? "✓ " : ""}${step.label}</button>
+                ${i < g.milestones.length - 1 ? `<span class="chain-arrow">→</span>` : ""}`
+                )
+                .join("")}
+            </div>
           </div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="badge badge-${badge}">${g.status}</span>
-            <button class="icon-btn" data-edit-goal="${g.id}" aria-label="Edit goal">${icon("dots")}</button>
-          </div>
-        </div>
-        <div class="project-progress-row">
-          <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
-          <div class="project-progress-pct num">${pct}%</div>
-        </div>
-        <div class="goal-plan-chain">
-          ${(g.milestones || [])
-            .map(
-              (step, i) => `
-            <button class="chain-step ${step.done ? "done" : ""}" data-ms="${g.id}:${i}" style="cursor:pointer;">${step.done ? "✓ " : ""}${step.label}</button>
-            ${i < g.milestones.length - 1 ? `<span class="chain-arrow">→</span>` : ""}`
-            )
-            .join("")}
         </div>
       </div>`;
   }

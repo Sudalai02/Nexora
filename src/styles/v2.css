@@ -111,8 +111,8 @@
 /* --- DO THIS NOW slider --- */
 .now-card-v2 { margin-bottom: var(--sp-5); }
 .now-card-v2 .now-task { font-size: clamp(22px, 6vw, 30px); max-width: none; }
-.now-actions-v2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); margin-top: var(--sp-4); position: relative; }
-.now-actions-v2 .btn { width: 100%; }
+.now-actions-v2 { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); position: relative; }
+.now-actions-v2 .btn { width: 100%; justify-content: center; }
 .flow-nav-v2 {
   display: flex;
   align-items: center;
@@ -604,7 +604,7 @@
   .weeksnap-grid { grid-template-columns: repeat(2, 1fr); }
   .sumchips { grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); }
   .focus-stats-row { gap: var(--sp-2); }
-  .now-actions-v2 { grid-template-columns: 1fr 1fr; }
+  .now-actions-v2 { flex-direction: column; }
 }
 @media (min-width: 721px) {
   .home-grid-v2 {
@@ -1413,6 +1413,129 @@
     height: 40px;
   }
 }
+
+/* ============ PRIORITY COLOR SYSTEM ============ */
+.prio-urgent { color: var(--prio-urgent); background: var(--prio-urgent-bg); }
+.prio-high   { color: var(--prio-high);   background: var(--prio-high-bg); }
+.prio-medium { color: var(--prio-medium); background: var(--prio-medium-bg); }
+.prio-low    { color: var(--prio-low);    background: var(--prio-low-bg); }
+
+.badge-prio-urgent { background: var(--prio-urgent-bg); color: var(--prio-urgent); }
+.badge-prio-high   { background: var(--prio-high-bg);   color: var(--prio-high); }
+.badge-prio-medium { background: var(--prio-medium-bg); color: var(--prio-medium); }
+.badge-prio-low    { background: var(--prio-low-bg);    color: var(--prio-low); }
+
+/* ============ TASK GROUPING (section headers) ============ */
+.task-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-2);
+  background: var(--paper-warm);
+  border-bottom: 2px solid var(--hairline-strong);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.task-group-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.task-group-goal {
+  font-size: 12px;
+  color: var(--graphite-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-group-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--graphite-dim);
+  flex-shrink: 0;
+}
+
+/* ============ ENLARGED CHECKBOX ============ */
+.check-lg {
+  width: 22px; height: 22px;
+  border-radius: 7px;
+  border: 2px solid var(--hairline-strong);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+  cursor: pointer;
+}
+.check-lg:hover { border-color: var(--focus-dim); }
+.check-lg.checked { background: var(--ink); border-color: var(--ink); }
+.check-lg.checked .nav-icon { width: 13px; height: 13px; background-color: white; }
+
+/* ============ TASK ROW REFINED ============ */
+.task-row-v2 {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--hairline);
+}
+.task-row-v2:hover { background: var(--paper); }
+.task-row-v2 .task-row-body { flex: 1; min-width: 0; }
+.task-row-v2 .task-row-title { font-size: 14px; font-weight: 500; color: var(--ink); }
+.task-row-v2 .task-row-title.done { text-decoration: line-through; color: var(--graphite-dim); }
+.task-row-v2 .task-row-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 3px; flex-wrap: wrap; }
+.task-row-v2 .task-row-due { font-size: 12px; color: var(--graphite-dim); }
+.task-row-v2 .task-row-due.overdue { color: var(--danger); font-weight: 600; }
+.task-row-v2 .task-row-due.today { color: var(--ember); font-weight: 600; }
+.task-row-v2 .task-row-due.yesterday { color: var(--warn); font-weight: 500; }
+.task-row-v2 .task-row-right { display: flex; align-items: center; gap: var(--sp-2); flex-shrink: 0; }
+.task-row-v2 .task-dur { font-family: var(--font-mono); font-size: 11.5px; color: var(--graphite-dim); }
+.task-row-v2 .task-prio-badge {
+  font-size: 10.5px; font-weight: 700; padding: 2px 7px;
+  border-radius: var(--r-full); letter-spacing: 0.01em;
+}
+
+/* ============ PROJECT CARD PROGRESS (single bar) ============ */
+.project-progress-row-v2 {
+  display: flex; align-items: center; gap: var(--sp-3);
+}
+.project-progress-row-v2 .progress-track { flex: 1; height: 8px; }
+.project-progress-pct-inline {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+  color: var(--graphite); flex-shrink: 0; min-width: 36px; text-align: right;
+}
+
+/* ============ GOAL DESCRIPTION TRUNCATE ============ */
+.goal-desc-truncated {
+  font-size: 13px; color: var(--graphite); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; max-width: 620px;
+}
+.goal-card-with-prio {
+  display: flex; gap: var(--sp-3); align-items: stretch;
+}
+.goal-prio-edge {
+  width: 4px; border-radius: 4px; flex-shrink: 0;
+}
+.goal-prio-edge.p-urgent { background: var(--prio-urgent); }
+.goal-prio-edge.p-high   { background: var(--prio-high); }
+.goal-prio-edge.p-medium { background: var(--prio-medium); }
+.goal-prio-edge.p-low    { background: var(--prio-low); }
+.goal-priority-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.goal-priority-dot.p-urgent { background: var(--prio-urgent); }
+.goal-priority-dot.p-high   { background: var(--prio-high); }
+.goal-priority-dot.p-medium { background: var(--prio-medium); }
+.goal-priority-dot.p-low    { background: var(--prio-low); }
+
+/* Slim progress bar for goals */
+.progress-track-slim { height: 4px; background: var(--hairline); border-radius: var(--r-full); overflow: hidden; }
+.progress-fill-slim { height: 100%; background: var(--focus); border-radius: var(--r-full); transition: width 0.3s ease; }
+
+/* ============ HOME: IMPROVED CONTRAST ============ */
+html.dark .home-date { color: #B8B4AC; }
+html.dark .home-tagline { color: #D8D4CB; }
+html.dark .hero-progress-top { color: #A8A49C; }
+html.dark .hero-stat { color: #E0DCD4; }
 
 /* ============ HOME HABIT CHIPS (info-only, two lines) ============ */
 .habit-chip {

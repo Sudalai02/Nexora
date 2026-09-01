@@ -114,22 +114,23 @@ export async function renderProjects(view, alive = () => true) {
   // ================= LIST VIEW =================
   function card(p) {
     const m = prog[p.id];
-    const pct = m.pct === null ? "—" : `${m.pct}%`;
+    const pctVal = m.pct ?? 0;
     const goal = goals.find((g) => g.id === p.goalId);
+    const goalTruncated = goal ? goal.title.length > 30 ? goal.title.slice(0, 30) + "…" : goal.title : null;
     return `
       <div class="card project-card" data-open="${p.id}">
         <div class="project-card-color" style="background:${p.color};"></div>
         <div class="project-card-top">
           <div>
             <div class="project-name">${p.name}</div>
-            ${goal ? `<div class="project-goal-link">${icon("goals")} ${goal.title}</div>` : `<div class="project-goal-link">No linked goal</div>`}
+            ${goalTruncated ? `<div class="project-goal-link">${icon("goals")} ${goalTruncated}</div>` : `<div class="project-goal-link">No linked goal</div>`}
           </div>
           ${statusBadge(p.status)}
         </div>
         ${pipelineHTML(p.status)}
-        <div class="project-progress-row">
-          <div class="progress-track"><div class="progress-fill" style="width:${m.pct ?? 0}%"></div></div>
-          <div class="project-progress-pct num">${pct}</div>
+        <div class="project-progress-row-v2">
+          <div class="progress-track" style="flex:1;"><div class="progress-fill" style="width:${pctVal}%"></div></div>
+          <span class="project-progress-pct-inline num">${pct === "—" ? "—" : `${pctVal}%`}</span>
         </div>
         <div class="project-card-footer">
           <span>${m.done}/${m.total} tasks</span>
@@ -421,7 +422,7 @@ async function renderDetail(view, alive, ctx) {
       <div style="margin-bottom: var(--sp-5);">${pipelineHTML(p.status)}</div>
 
       <div class="detail-stats">
-        <div class="stat-box"><div class="stat-value num">${pct}</div><div class="stat-label">Progress (${m.done}/${m.total} tasks)</div></div>
+        <div class="stat-box"><div class="stat-value num">${pct}</div><div class="stat-label">${m.done}/${m.total} tasks</div></div>
         <div class="stat-box"><div class="stat-value num">${open}</div><div class="stat-label">Open tasks</div></div>
         <div class="stat-box"><div class="stat-value num">${p.deadline ? fmtDate(p.deadline) : "—"}</div><div class="stat-label">Deadline</div></div>
         <div class="stat-box"><div class="stat-value num" style="font-size:14px;">${goal ? goal.title.slice(0, 22) : "None"}</div><div class="stat-label">Linked goal</div></div>

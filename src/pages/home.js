@@ -359,21 +359,18 @@ export async function renderHome(view, alive = () => true) {
           <div class="now-actions-v2">
             ${
               current.kind === "task"
-                ? `<a class="btn btn-primary" href="#/tasks">${icon("check")} Open task</a>
-                   <button class="btn btn-secondary" id="start-focus-btn">${icon("play")} Start focus</button>`
+                ? `<button class="btn btn-primary" id="start-focus-btn">${icon("play")} Start focus</button>
+                   <a class="btn btn-secondary" href="#/tasks">${icon("check")} Open task</a>`
                 : current.kind === "habit"
-                  ? `<a class="btn btn-primary" href="#/goals">${icon("flag")} Open habits</a>`
+                  ? `<button class="btn btn-primary" id="start-focus-btn">${icon("play")} Open habits</button>`
                   : current.kind === "event"
                     ? `<a class="btn btn-primary" href="#/calendar">${icon("calendar")} View in calendar</a>`
                     : `<a class="btn btn-primary" href="${current.kind === "deadline" ? "#/goals" : "#/projects"}">${icon("flag")} Open</a>`
             }
           </div>
           <div class="flow-nav-v2">
-            <span style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn btn-sm btn-secondary" id="reschedule-btn" ${current.kind !== "task" ? "hidden" : ""}>Reschedule</button>
-              <button class="btn btn-sm btn-ghost" id="flow-next-btn">Next ›</button>
-            </span>
-            <span class="flow-counter num">${slider.index + 1} / ${flow.length}</span>
+            <button class="btn btn-sm btn-ghost" id="reschedule-btn" ${current.kind !== "task" ? "hidden" : ""}>Reschedule</button>
+            <span class="flow-dots-v2" id="flow-dots"></span>
           </div>
         </div>`
               : `
@@ -570,15 +567,25 @@ export async function renderHome(view, alive = () => true) {
   };
 
   view.querySelector("#start-focus-btn")?.addEventListener("click", () => {
-    if (current?.ref?.id) sessionStorage.setItem("nexora-focus-task", current.ref.id);
-    window.location.hash = "#/focus";
+    if (current?.kind === "task" && current?.ref?.id) sessionStorage.setItem("nexora-focus-task", current.ref.id);
+    if (current?.kind === "habit") {
+      window.location.hash = "#/goals";
+    } else {
+      window.location.hash = "#/focus";
+    }
   });
-
-  view.querySelector("#flow-next-btn")?.addEventListener("click", advance);
 
   view.querySelector("#reschedule-btn")?.addEventListener("click", () => {
     window.location.hash = "#/tasks";
   });
+
+  // Render flow dots
+  const dotsEl = view.querySelector("#flow-dots");
+  if (dotsEl && flow.length > 1) {
+    dotsEl.innerHTML = flow.map((_, i) =>
+      `<span class="flow-dot-v2 ${i < slider.index ? "passed" : ""} ${i === slider.index ? "active" : ""}"></span>`
+    ).join("");
+  }
 
   view.querySelectorAll("[data-attention]").forEach((btn) => {
     btn.addEventListener("click", () => {

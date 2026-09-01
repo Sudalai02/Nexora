@@ -8,7 +8,7 @@
 // filter combinations.
 // ============================================================
 
-import { icon, isOverdue, priorityLabel, priorityDotClass } from "../dom.js";
+import { icon, priorityLabel, priorityDotClass } from "../dom.js";
 import { fmtDue, todayISO, addDays, startOfWeekISO } from "../utils/dates.js";
 import { openForm } from "../ui/modal.js";
 import { toast } from "../ui/toast.js";
@@ -70,28 +70,39 @@ function dateRangeBounds() {
   }
 }
 
-function taskRow(t, projectName, goalTitle) {
+function dueClass(t, today) {
+  if (t.status === "Completed") return "";
+  if (!t.dueDate) return "";
+  const d = t.dueDate;
+  if (d < today) return "overdue";
+  if (d === today) return "today";
+  return "";
+}
+
+function taskRow(t, projectName, goalTitle, today) {
   const done = t.status === "Completed";
+  const dClass = dueClass(t, today);
+  const prio = t.priority || "Medium";
+  const prioBadge = `prio-${prio.toLowerCase()}`;
+  const timeRange = t.startTime ? (t.endTime ? `${t.startTime}–${t.endTime}` : t.startTime) : null;
   return `
-    <div class="task-row" data-edit="${t.id}" role="button" tabindex="0">
-      <button class="check ${done ? "checked" : ""}" data-toggle="${t.id}" aria-label="${done ? "Reopen" : "Complete"} task">
+    <div class="task-row-v2" data-edit="${t.id}" role="button" tabindex="0">
+      <button class="check-lg ${done ? "checked" : ""}" data-toggle="${t.id}" aria-label="${done ? "Reopen" : "Complete"} task">
         ${done ? icon("check") : ""}
       </button>
       <span class="priority-dot ${priorityDotClass(t.priority)}"></span>
       <div class="task-row-body">
         <div class="task-row-title ${done ? "done" : ""}">${t.title}</div>
         <div class="task-row-meta">
-          ${projectName ? `<span class="tag">${projectName}</span>` : ""}
-          ${goalTitle ? `<span class="task-goal-link">${icon("flag")} ${goalTitle}</span>` : ""}
-          ${t.dueDate ? `<span class="task-row-due ${isOverdue(t.dueDate) && !done ? "overdue" : ""}">${fmtDue(t.dueDate)}</span>` : ""}
-          ${t.startTime ? `<span class="task-time">${icon("clock")} ${t.startTime}${t.endTime ? `–${t.endTime}` : ""}</span>` : ""}
+          ${t.dueDate ? `<span class="task-row-due ${dClass}">${fmtDue(t.dueDate)}</span>` : ""}
+          ${timeRange ? `<span class="task-time">${icon("clock")} ${timeRange}</span>` : ""}
           ${t.status === "Blocked" ? `<span class="badge badge-danger">Blocked</span>` : ""}
           ${t.status === "In Progress" ? `<span class="badge badge-focus">In progress</span>` : ""}
         </div>
       </div>
       <div class="task-row-right">
-        <span class="badge badge-${t.priority === "Urgent" ? "ember" : t.priority === "High" ? "warn" : "neutral"}">${priorityLabel(t.priority)}</span>
-        <span class="num" style="font-size:12px; color:var(--graphite-dim);">${t.estimatedMinutes}m</span>
+        <span class="task-dur num">${t.estimatedMinutes}m</span>
+        <span class="task-prio-badge badge-prio-${prio.toLowerCase()}">${priorityLabel(prio)}</span>
       </div>
     </div>
   `;
@@ -164,11 +175,56 @@ export async function renderTasks(view, alive = () => true) {
     return [...list].sort(SORTERS[state.sort]);
   }
 
+  function taskGroupsHTML(tasks, projectNameOf, goalTitleOf, today) {
+    if (!tasks.length) return "";
+    const groups = [];
+    const order = [];
+    const seen = new Set();
+    const bucketOf = (t) => {
+      if (t.projectId) return `project:${t.projectId}`;
+      if (t.goalId) return `goal:${t.goalId}`;
+      return "none";
+    };
+    for (const t of tasks) {
+      const key = bucketOf(t);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      groups.push({ key, label: groupLabel(t, projectNameOf, goalTitleOf), items: [] });
+    }
+    const index = new Map(groups.map((g, i) => [g.key, i]));
+    for (const t of tasks) {
+      const key = bucketOf(t);
+      groups[index.get(key)].items.push(t);
+    }
+    return groups
+      .map(
+        (g) => `
+        <div class="task-group-header">
+          <span class="task-group-name">${g.label.name}</span>
+          ${g.label.goal ? `<span class="task-group-goal">${icon("flag")} ${g.label.goal}</span>` : ""}
+          <span class="task-group-count">${g.items.length}</span>
+        </div>
+        ${g.items.map((t) => taskRow(t, projectNameOf(t.projectId), goalTitleOf(t.goalId), today)).join("")}`
+      )
+      .join("");
+  }
+
+  function groupLabel(t, projectNameOf, goalTitleOf) {
+    if (t.projectId) {
+      const name = projectNameOf(t.projectId) || "Project";
+      const goal = t.goalId ? goalTitleOf(t.goalId) : (projects.find((p) => p.id === t.projectId)?.goalId ? goalTitleOf(projects.find((p) => p.id === t.projectId).goalId) : null);
+      return { name, goal };
+    }
+    if (t.goalId) return { name: "No project", goal: goalTitleOf(t.goalId) };
+    return { name: "Inbox", goal: null };
+  }
+
   function draw() {
     const list = filtered();
     const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
     state.page = Math.min(state.page, totalPages);
     const pageItems = list.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
+    const today = todayISO();
 
     view.innerHTML = `
       <div class="page-header">
@@ -245,7 +301,7 @@ export async function renderTasks(view, alive = () => true) {
       <div class="card card-flush">
         <div class="task-list">
           ${pageItems.length
-            ? pageItems.map((t) => taskRow(t, projectNameOf(t.projectId), goalTitleOf(t.goalId))).join("")
+            ? taskGroupsHTML(pageItems, projectNameOf, goalTitleOf, today)
             : `<div class="empty-state"><h3>Nothing here</h3><p>No tasks match these filters.</p></div>`}
         </div>
       </div>
