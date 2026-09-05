@@ -492,19 +492,12 @@ export const PROMPTS = [
 
       const g = active[0];
       const pct = gProg[g.id]?.pct ?? 0;
-      const msTotal = g.milestones?.length || 0;
-      const msDone = (g.milestones || []).filter((m) => m.done).length;
 
-      const lines = [`Here's the breakdown for **${g.title}** (${pct}% complete):`];
-
-      if (msTotal) {
-        lines.push("", "**Milestones:**");
-        for (const m of g.milestones) {
-          lines.push(`${m.done ? "\u2705" : "\u25fb"} ${m.label}`);
-        }
-      }
-
-      lines.push("", `Progress: ${msDone}/${msTotal} milestones complete, ${pct}% overall.`);
+      const lines = [
+        `Here's the current state of **${g.title}** (${pct}% complete):`,
+        "",
+        `Progress: ${pct}% overall.`,
+      ];
       if (g.targetDate) {
         const daysLeft = diffDays(todayISO(), g.targetDate);
         lines.push(daysLeft > 0 ? `${daysLeft} days remaining.` : `${Math.abs(daysLeft)} days past target.`);
@@ -1215,7 +1208,7 @@ export const PROMPTS = [
     label: "Turn Idea Into Goal",
     match: (t) => t.includes("turn") && t.includes("goal") || t.includes("create goal") || t.includes("new goal") || t.includes("idea into"),
     handler: async () => {
-      return `I'd love to help structure a new goal! Tell me your idea in a sentence or two, and I'll break it down into milestones, timelines, and first steps.\n\nFor example: "I want to grow my freelance business" or "I want to learn to code."\n\nJust type your idea below and press Send.`;
+      return `I'd love to help structure a new goal! Tell me your idea in a sentence or two, and I'll break it down into structured phases, timelines, and first steps.\n\nFor example: "I want to grow my freelance business" or "I want to learn to code."\n\nJust type your idea below and press Send.`;
     },
   },
 ];

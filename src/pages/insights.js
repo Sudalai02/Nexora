@@ -591,7 +591,7 @@ export async function renderInsights(view, alive = () => true) {
     <!-- NEEDS ATTENTION -->
     <section class="card insight-attention">
       <div class="module-head">
-        <span class="module-emoji">⚠</span>
+        <span class="module-emoji acc-danger">⚠</span>
         <div><h2>Needs Your Attention</h2></div>
         ${risks.length ? `<span class="attention-count">${risks.length}</span>` : ""}
       </div>
@@ -629,7 +629,7 @@ export async function renderInsights(view, alive = () => true) {
     <!-- PRODUCTIVITY TREND -->
     <section class="card insight-trend">
       <div class="module-head">
-        <span class="module-emoji">📈</span>
+        <span class="module-emoji acc-focus">📈</span>
         <div><h2>Productivity Trend</h2></div>
       </div>
       <div class="trend-chart-wrap">
@@ -643,7 +643,7 @@ export async function renderInsights(view, alive = () => true) {
       <!-- TASK PERFORMANCE -->
       <section class="card insight-module">
         <div class="module-head">
-          <span class="module-emoji">⚡</span>
+          <span class="module-emoji acc-ember">⚡</span>
           <div><h2>Task Performance</h2></div>
         </div>
         <div class="perf-stats">
@@ -662,7 +662,7 @@ export async function renderInsights(view, alive = () => true) {
       <!-- FOCUS & DEEP WORK -->
       <section class="card insight-module">
         <div class="module-head">
-          <span class="module-emoji">⏱</span>
+          <span class="module-emoji acc-sky">⏱</span>
           <div><h2>Focus &amp; Deep Work</h2></div>
         </div>
         <div class="focus-stats">
@@ -680,7 +680,7 @@ export async function renderInsights(view, alive = () => true) {
       <!-- GOALS -->
       <section class="card insight-module">
         <div class="module-head">
-          <span class="module-emoji">🎯</span>
+          <span class="module-emoji acc-violet">🎯</span>
           <div><h2>Goals</h2></div>
         </div>
         <div class="goals-list">
@@ -705,7 +705,7 @@ export async function renderInsights(view, alive = () => true) {
       <!-- PROJECT HEALTH -->
       <section class="card insight-module">
         <div class="module-head">
-          <span class="module-emoji">📁</span>
+          <span class="module-emoji acc-good">📁</span>
           <div><h2>Project Health</h2></div>
         </div>
         <div class="projects-list">
@@ -732,7 +732,7 @@ export async function renderInsights(view, alive = () => true) {
       <!-- HABIT CONSISTENCY -->
       <section class="card insight-module">
         <div class="module-head">
-          <span class="module-emoji">🔄</span>
+          <span class="module-emoji acc-teal">🔄</span>
           <div><h2>Habit Consistency</h2></div>
         </div>
         <div class="habits-list">
@@ -760,7 +760,7 @@ export async function renderInsights(view, alive = () => true) {
     <!-- AI PERSONAL ANALYSIS -->
     <section class="card insight-ai-analysis">
       <div class="module-head">
-        <span class="module-emoji">🤖</span>
+        <span class="module-emoji acc-focus">🤖</span>
         <div><h2>AI Personal Analysis</h2></div>
       </div>
       <div class="ai-lines">
@@ -829,7 +829,7 @@ export async function renderInsights(view, alive = () => true) {
     ${goalForecasts.length ? `
     <section class="card insight-forecast">
       <div class="module-head">
-        <span class="module-emoji">🔮</span>
+        <span class="module-emoji acc-warn">🔮</span>
         <div><h2>Forecast</h2></div>
       </div>
       <div class="forecast-list">

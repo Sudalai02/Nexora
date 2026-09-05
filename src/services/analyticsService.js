@@ -19,19 +19,13 @@ async function computeGoalProgress(goals, projects, tasks) {
   }
   const map = {};
   for (const g of goals) {
-    const msTotal = g.milestones?.length || 0;
-    const msDone = (g.milestones || []).filter((m) => m.done).length;
     const linked = projects.filter((p) => p.goalId === g.id);
     const directTasks = tasks.filter((t) => t.goalId === g.id);
     let done = 0, total = 0;
     for (const p of linked) { done += projProg[p.id]?.done || 0; total += projProg[p.id]?.total || 0; }
     for (const t of directTasks) { total += 1; if (doneSet.includes(t.status)) done += 1; }
     const taskPct = total > 0 ? Math.round((done / total) * 100) : null;
-    let pct = null;
-    if (msTotal && taskPct !== null) pct = Math.round(msDone * 0.4 + taskPct * 0.6);
-    else if (msTotal) pct = Math.round((msDone / msTotal) * 100);
-    else if (taskPct !== null) pct = taskPct;
-    map[g.id] = { pct: g.status === "Completed" ? 100 : pct, msDone, msTotal, taskPct, taskDone: done, taskTotal: total };
+    map[g.id] = { pct: g.status === "Completed" ? 100 : taskPct, taskPct, taskDone: done, taskTotal: total };
   }
   return map;
 }

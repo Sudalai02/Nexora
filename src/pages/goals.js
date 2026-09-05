@@ -3,7 +3,7 @@
 //
 // Goals: full filter system (Status / Category / Priority / Sort)
 // with working pagination. Statuses are Active, In Progress,
-// Completed, On Hold. Progress % is computed from milestones +
+// Completed, On Hold. Progress % is computed from linked projects + tasks and
 // linked work and updates automatically as tasks complete.
 //
 // Habits: filter (All / Scheduled today / Archived), sort, and
@@ -128,11 +128,12 @@ export async function renderGoals(view, alive = () => true) {
           : g.status === "In Progress"
             ? "focus"
             : "neutral";
+    const catClass = { Personal: "cat-personal", Career: "cat-career", Health: "cat-health", Learning: "cat-learning", Finance: "cat-finance" }[g.category] || "cat-personal";
     const prioClass = { Urgent: "p-urgent", High: "p-high", Medium: "p-medium", Low: "p-low" }[g.priority] || "p-low";
     const targetText = g.targetDate ? fmtDate(g.targetDate) : "no date";
     return `
       <div class="card goal-card" data-edit-goal="${g.id}" data-goal-card>
-        <div class="project-card-color ${prioClass}"></div>
+        <div class="project-card-color ${catClass}"></div>
         <div class="project-card-top">
           <div class="project-card-name-wrap">
             <div class="goal-title">${g.title}</div>
@@ -149,18 +150,8 @@ export async function renderGoals(view, alive = () => true) {
         </div>
         <div class="project-card-footer">
           <span>${icon("flag")} ${targetText}</span>
-          <span>${g.category} · ${g.priority}</span>
+          <span class="goal-meta"><i class="goal-cat-dot ${catClass}"></i><span class="goal-cat-name">${g.category}</span> · <b class="goal-prio ${prioClass}">${g.priority}</b></span>
         </div>
-        ${g.milestones?.length ? `
-        <div class="goal-plan-chain" style="margin-top:var(--sp-3);">
-          ${g.milestones
-            .map(
-              (step, i) => `
-            <button class="chain-step ${step.done ? "done" : ""}" data-ms="${g.id}:${i}" style="cursor:pointer;" onclick="event.stopPropagation()">${step.done ? "✓ " : ""}${step.label}</button>
-            ${i < g.milestones.length - 1 ? `<span class="chain-arrow">→</span>` : ""}`
-            )
-            .join("")}
-        </div>` : ""}
       </div>`;
   }
 
@@ -280,7 +271,7 @@ export async function renderGoals(view, alive = () => true) {
 
       <div class="card" style="text-align:center; padding: var(--sp-8) var(--sp-6); border-style: dashed; margin-top: var(--sp-8);">
         <div class="eyebrow" style="margin-bottom: 8px;">${icon("spark")} AI goal planning</div>
-        <p style="font-size: 13px; color: var(--graphite); max-width: 420px; margin: 0 auto 16px;">Describe an outcome in plain language and the AI will draft milestones and a first batch of tasks for your review.</p>
+        <p style="font-size: 13px; color: var(--graphite); max-width: 420px; margin: 0 auto 16px;">Describe an outcome in plain language and the AI will draft a plan and a first batch of tasks for your review.</p>
         <button class="btn btn-secondary btn-sm" id="ai-plan-btn">Plan a new goal</button>
       </div>
     `;
@@ -496,7 +487,6 @@ export async function renderGoals(view, alive = () => true) {
         eyebrow: `🎯 ${g.category} · ${g.priority} · ${prog[g.id]?.pct ?? 0}%`,
         actions: [
           { id: "edit", label: "✏️ Edit details", class: "btn-secondary" },
-          { id: "milestone", label: "＋ Add milestone step", class: "btn-secondary" },
           ...(g.status !== "Completed"
             ? [{ id: "complete", label: "🏁 Mark as Completed", class: "btn-secondary" }]
             : []),
@@ -511,17 +501,6 @@ export async function renderGoals(view, alive = () => true) {
         if (!upd) return;
         Object.assign(g, await goalService.updateGoal(g.id, upd));
         toast("Goal updated");
-      } else if (res.action === "milestone") {
-        const m = await openForm({
-          title: "Add milestone",
-          eyebrow: g.title,
-          fields: [{ name: "label", label: "Milestone", required: true, placeholder: "e.g. Ship beta" }],
-          submitLabel: "Add",
-        });
-        if (!m?.label?.trim()) return;
-        const ms = [...(g.milestones || []), { label: m.label.trim(), done: false }];
-        Object.assign(g, await goalService.updateGoal(g.id, { milestones: ms }));
-        toast("Milestone added");
       } else if (res.action === "complete") {
         Object.assign(g, await goalService.updateGoal(g.id, { status: "Completed" }));
         toast("Goal completed 🎉");
@@ -548,16 +527,6 @@ export async function renderGoals(view, alive = () => true) {
     );
     view.querySelectorAll("[data-goal-menu]").forEach((btn) =>
       btn.addEventListener("click", () => openGoalPanel(btn.dataset.goalMenu))
-    );
-
-    view.querySelectorAll("[data-ms]").forEach((el) =>
-      el.addEventListener("click", async () => {
-        const [gid, idx] = el.dataset.ms.split(":");
-        const g = goals.find((x) => x.id === gid);
-        g.milestones[Number(idx)].done = !g.milestones[Number(idx)].done;
-        await goalService.updateGoal(gid, { milestones: g.milestones });
-        draw();
-      })
     );
   }
 

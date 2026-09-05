@@ -284,7 +284,7 @@ export async function breakDownGoal({ title, description = "", targetDate = "" }
           {
             role: "system",
             content:
-              'You are TaskTrack\'s goal planner. Break the user\'s goal into 3-5 sequential milestones. For each milestone give 2-3 concrete first-batch tasks. Reply ONLY with JSON: {"milestones":[{"label":"Milestone name","tasks":["Task one","Task two"]}]}',
+              'You are TaskTrack\'s goal planner. Break the user\'s goal into 3-5 sequential phases. For each phase give 2-3 concrete first-batch tasks. Reply ONLY with JSON: {"milestones":[{"label":"Phase name","tasks":["Task one","Task two"]}]}',
           },
           {
             role: "user",

@@ -116,7 +116,7 @@ export async function renderSettings(view, alive = () => true) {
         ["home", "Home", "Daily dashboard and briefing"],
         ["tasks", "Tasks", "Task list with priorities and deadlines"],
         ["projects", "Projects", "Group tasks into projects"],
-        ["goals", "Goals", "Long-term goals with milestones"],
+        ["goals", "Goals", "Long-term goals with linked projects"],
         ["calendar", "Calendar", "Schedule and events view"],
         ["focus", "Focus", "Pomodoro timer and focus sessions"],
         ["notes", "Notes", "Quick notes and documents"],
@@ -158,7 +158,7 @@ export async function renderSettings(view, alive = () => true) {
           <h3>AI Features</h3>
           <div class="sub">Control what AI can do across the app.</div>
           ${switchEl("ai-recommendations", ai.recommendations !== false, "AI recommendations", "Personalized suggestions based on your patterns and productivity data")}
-          ${switchEl("ai-smartPlanning", ai.smartPlanning !== false, "Smart task planning", "AI helps break down goals into actionable tasks with milestones")}
+          ${switchEl("ai-smartPlanning", ai.smartPlanning !== false, "Smart task planning", "AI helps break down goals into phases and actionable tasks")}
           ${switchEl("ai-autoBreakdown", ai.autoBreakdown !== false, "Automatic task breakdown", "Automatically create subtasks when you add complex tasks")}
         </div>
         <div class="settings-section">

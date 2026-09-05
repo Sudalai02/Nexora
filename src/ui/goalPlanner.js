@@ -76,7 +76,6 @@ export async function runGoalPlanner() {
   const chosen = [...res.body.querySelectorAll("[data-pp-task]:checked")].map((c) => c.dataset.ppTask);
 
   // 4. Apply through services
-  const milestones = plan.milestones.map((m) => ({ label: m.label, done: false }));
   const goal = await goalService.createGoal({
     title: input.title,
     description: input.description,
@@ -84,7 +83,6 @@ export async function runGoalPlanner() {
     priority: input.priority || "Medium",
     startDate: todayISO(),
     targetDate: input.targetDate || "",
-    milestones,
   });
 
   const project = await projectService.createProject({

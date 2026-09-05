@@ -51,7 +51,7 @@ export async function removeGoal(id) {
   return entry;
 }
 
-// Progress = milestone completion blended with linked work.
+// Progress = driven purely by linked work.
 // "Linked work" covers BOTH projects assigned to the goal AND tasks
 // linked directly to it, so completing/reopening a task instantly
 // moves the percentage up or down.
@@ -69,8 +69,6 @@ export async function progressMap(goals, projects, tasks) {
   const map = {};
   for (const g of goals) {
     const status = normalizeStatus(g.status);
-    const msTotal = g.milestones?.length || 0;
-    const msDone = (g.milestones || []).filter((m) => m.done).length;
     const linked = projects.filter((p) => p.goalId === g.id);
     const directTasks = tasks.filter((t) => t.goalId === g.id);
 
@@ -84,18 +82,11 @@ export async function progressMap(goals, projects, tasks) {
       total += 1;
       if (doneSet.includes(t.status)) done += 1;
     }
-    const taskPct = total > 0 ? Math.round((done / total) * 100) : null;
-
-    let pct = null;
-    if (msTotal && taskPct !== null) pct = Math.round(msDone * 0.4 + taskPct * 0.6);
-    else if (msTotal) pct = Math.round((msDone / msTotal) * 100);
-    else if (taskPct !== null) pct = taskPct;
+    const pct = total > 0 ? Math.round((done / total) * 100) : null;
 
     map[g.id] = {
       pct: status === "Completed" ? 100 : pct,
-      msDone,
-      msTotal,
-      taskPct,
+      taskPct: pct,
       taskDone: done,
       taskTotal: total,
     };

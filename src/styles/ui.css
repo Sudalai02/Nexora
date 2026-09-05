@@ -166,9 +166,36 @@ html.dark {
 }
 .goal-card .goal-desc-truncated {
   font-size: 13px;
-  color: var(--graphite);
+  color: var(--graphite-dim);
   margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+/* Category color accents — edge strip, meta dot, meta text */
+.goal-card .cat-personal { background: var(--focus); }
+.goal-card .cat-career   { background: var(--violet); }
+.goal-card .cat-health   { background: var(--good); }
+.goal-card .cat-learning { background: var(--warn); }
+.goal-card .cat-finance  { background: var(--teal); }
+.goal-card .goal-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.goal-card .goal-cat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--graphite-dim);
+}
+.goal-card .goal-cat-name { font-weight: 600; }
+.goal-card .goal-prio.p-urgent { color: var(--prio-urgent); }
+.goal-card .goal-prio.p-high   { color: var(--prio-high); }
+.goal-card .goal-prio.p-medium { color: var(--prio-medium); }
+.goal-card .goal-prio.p-low    { color: var(--graphite-dim); }
 .goal-card .goal-progress-row {
   display: flex;
   align-items: center;
@@ -213,3 +240,34 @@ html.dark {
 /* ============ EMPTY STATE — friendlier ============ */
 .empty-state .nav-icon { opacity: 0.45; }
 .empty-state p { line-height: 1.55; }
+
+/* ============ MORE SHEET (mobile grid, one-line labels) ============ */
+#more-sheet-backdrop .sheet-grid {
+  gap: var(--sp-2);
+}
+#more-sheet-backdrop .sheet-item {
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#more-sheet-backdrop .sheet-item .nav-icon {
+  width: 30px;
+  height: 30px;
+  padding: 7px;
+}
+
+/* ============ INSIGHTS — colored module chips ============ */
+.module-emoji.acc-focus  { background: var(--focus-soft);  border-color: transparent; }
+.module-emoji.acc-ember  { background: var(--ember-soft);  border-color: transparent; }
+.module-emoji.acc-warn   { background: var(--warn-soft);   border-color: transparent; }
+.module-emoji.acc-good   { background: var(--good-soft);   border-color: transparent; }
+.module-emoji.acc-danger { background: var(--danger-soft); border-color: transparent; }
+.module-emoji.acc-violet { background: var(--violet-soft); border-color: transparent; }
+.module-emoji.acc-sky    { background: var(--sky-soft);    border-color: transparent; }
+.module-emoji.acc-teal   { background: var(--teal-soft);   border-color: transparent; }
