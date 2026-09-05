@@ -547,12 +547,6 @@ export async function renderInsights(view, alive = () => true) {
         </button>
       `).join("")}
       <button class="filter-btn period-custom-btn" id="period-custom-btn" type="button">Custom</button>
-      <form class="period-custom-form" id="period-custom-form" hidden>
-        <input type="date" id="period-custom-start" aria-label="Start date" required>
-        <span class="period-custom-sep">–</span>
-        <input type="date" id="period-custom-end" aria-label="End date" required>
-        <button type="submit" class="btn btn-sm btn-primary">Go</button>
-      </form>
     </div>
 
     <!-- PRODUCTIVITY HEALTH -->
@@ -859,29 +853,37 @@ export async function renderInsights(view, alive = () => true) {
     });
   });
 
-  // Custom period inline date picker
+  // Custom period — centered popup date picker
   const customBtn = view.querySelector("#period-custom-btn");
-  const customForm = view.querySelector("#period-custom-form");
-  const customStart = view.querySelector("#period-custom-start");
-  const customEnd = view.querySelector("#period-custom-end");
-  if (customBtn && customForm) {
-    customBtn.addEventListener("click", () => {
-      customForm.hidden = !customForm.hidden;
-      if (!customForm.hidden) customStart.focus();
-    });
-  }
-  if (customForm) {
-    customForm.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const start = customStart.value;
-      const end = customEnd.value;
+  if (customBtn) {
+    customBtn.addEventListener("click", async () => {
+      const { openPanel } = await import("../ui/modal.js");
+      const result = await openPanel({
+        title: "Custom period",
+        eyebrow: "PRODUCTIVITY HEALTH",
+        bodyHTML: `
+          <div class="period-custom-form">
+            <div class="form-field">
+              <label>Start date</label>
+              <input type="date" id="period-custom-start" aria-label="Start date" required>
+            </div>
+            <div class="form-field">
+              <label>End date</label>
+              <input type="date" id="period-custom-end" aria-label="End date" required>
+            </div>
+            <div class="period-custom-err" hidden></div>
+          </div>
+        `,
+        actions: [{ id: "apply", label: "Apply", class: "btn-primary" }],
+      });
+      if (result?.action !== "apply") return;
+      const start = result.body.querySelector("#period-custom-start").value;
+      const end = result.body.querySelector("#period-custom-end").value;
       if (!start || !end) return;
       if (end < start) {
-        customForm.querySelector(".period-custom-err")?.remove();
-        const err = document.createElement("span");
-        err.className = "period-custom-err";
+        const err = result.body.querySelector(".period-custom-err");
         err.textContent = "End date must be after start date.";
-        customForm.appendChild(err);
+        err.hidden = false;
         return;
       }
       const customDays = Math.max(diffDays(start, end) + 1, 1);
