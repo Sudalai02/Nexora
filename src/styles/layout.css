@@ -228,12 +228,11 @@ html.dark .topbar { background: rgba(21,20,19,0.92); }
   .bn-item.active { color: var(--focus); }
 
   .bn-fab {
-    width: 46px; height: 46px;
-    border-radius: var(--r-full);
+    width: 48px; height: 48px;
+    border-radius: var(--r-lg);
     background: var(--ink);
     color: var(--paper);
     display: flex; align-items: center; justify-content: center;
-    margin-top: -22px;
     box-shadow: var(--shadow-lg);
     flex-shrink: 0;
   }
