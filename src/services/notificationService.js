@@ -100,13 +100,13 @@ export async function showNative(title, body, route = null) {
     if (swReg?.showNotification) {
       await swReg.showNotification(title, {
         body,
-        icon: "icons/icon.svg",
-        badge: "icons/icon.svg",
+        icon: "icons/logoimage.PNG",
+        badge: "icons/logoimage.PNG",
         tag: `nexora-${Date.now()}`,
         data: { route },
       });
     } else {
-      const n = new Notification(title, { body, icon: "icons/icon.svg", tag: `nexora-${Date.now()}` });
+      const n = new Notification(title, { body, icon: "icons/logoimage.PNG", tag: `nexora-${Date.now()}` });
       n.onclick = () => {
         window.focus();
         if (route) window.location.hash = route;
