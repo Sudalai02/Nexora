@@ -546,7 +546,13 @@ export async function renderInsights(view, alive = () => true) {
           ${pp.label}
         </button>
       `).join("")}
-      <button class="filter-btn period-custom-btn" data-period="custom">Custom</button>
+      <button class="filter-btn period-custom-btn" id="period-custom-btn" type="button">Custom</button>
+      <form class="period-custom-form" id="period-custom-form" hidden>
+        <input type="date" id="period-custom-start" aria-label="Start date" required>
+        <span class="period-custom-sep">–</span>
+        <input type="date" id="period-custom-end" aria-label="End date" required>
+        <button type="submit" class="btn btn-sm btn-primary">Go</button>
+      </form>
     </div>
 
     <!-- PRODUCTIVITY HEALTH -->
@@ -561,15 +567,13 @@ export async function renderInsights(view, alive = () => true) {
             <span class="score-num">${score.score}</span>
             <span class="score-of">/100</span>
           </div>
-        </div>
-        <div class="score-meta">
           ${score.delta != null && score.delta !== 0
             ? `<span class="score-delta ${score.delta > 0 ? "up" : "down"}">${score.delta > 0 ? "▲" : "▼"} ${Math.abs(score.delta)}% ${compareLabel(currentPeriod)}</span>`
             : `<span class="score-delta flat">— same as before</span>`
           }
+        </div>
+        <div class="score-meta">
           <div class="score-verdict">${scoreLabel(score.score)}</div>
-          <div class="score-range">Overall for ${periodLabel(currentPeriod).toLowerCase()} · ${esc(periodRange)}</div>
-          <div class="hero-hint">Tap the score or any category to see how it's counted</div>
         </div>
       </div>
       <div class="score-categories">
@@ -581,12 +585,11 @@ export async function renderInsights(view, alive = () => true) {
           ["Schedule", score.parts.schedule],
         ].map(([label, val]) => `
           <div class="cat-row" role="button" tabindex="0" data-cat="${label.toLowerCase()}" aria-label="How the ${label} score is calculated">
-            <span class="cat-label">${label} <span class="cat-info">ℹ</span></span>
+            <span class="cat-label">${label}</span>
             <div class="cat-bar-track"><div class="cat-bar-fill ${scoreClass(val ?? 0)}" style="width:${val ?? 0}%"></div></div>
             <span class="cat-val">${val != null ? val + "%" : "—"}</span>
           </div>
         `).join("")}
-        <div class="cat-period-line">Period: ${esc(periodRange)}</div>
       </div>
       <div class="info-popup" role="dialog" aria-live="polite" hidden></div>
     </section>
@@ -851,24 +854,44 @@ export async function renderInsights(view, alive = () => true) {
   // Period tabs
   view.querySelectorAll("[data-period]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const key = btn.dataset.period;
-      if (key === "custom") {
-        const start = prompt("Start date (YYYY-MM-DD):");
-        const end = prompt("End date (YYYY-MM-DD):");
-        if (start && end) {
-          const customDays = Math.max(diffDays(start, end) + 1, 1);
-          const existing = PERIODS.findIndex((p) => p.key === "custom");
-          if (existing >= 0) PERIODS.splice(existing, 1);
-          PERIODS.push({ key: "custom", label: "Custom", days: customDays, compare: null });
-          currentPeriod = "custom";
-          renderInsights(view, alive);
-        }
-        return;
-      }
-      currentPeriod = key;
+      currentPeriod = btn.dataset.period;
       renderInsights(view, alive);
     });
   });
+
+  // Custom period inline date picker
+  const customBtn = view.querySelector("#period-custom-btn");
+  const customForm = view.querySelector("#period-custom-form");
+  const customStart = view.querySelector("#period-custom-start");
+  const customEnd = view.querySelector("#period-custom-end");
+  if (customBtn && customForm) {
+    customBtn.addEventListener("click", () => {
+      customForm.hidden = !customForm.hidden;
+      if (!customForm.hidden) customStart.focus();
+    });
+  }
+  if (customForm) {
+    customForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const start = customStart.value;
+      const end = customEnd.value;
+      if (!start || !end) return;
+      if (end < start) {
+        customForm.querySelector(".period-custom-err")?.remove();
+        const err = document.createElement("span");
+        err.className = "period-custom-err";
+        err.textContent = "End date must be after start date.";
+        customForm.appendChild(err);
+        return;
+      }
+      const customDays = Math.max(diffDays(start, end) + 1, 1);
+      const existing = PERIODS.findIndex((p) => p.key === "custom");
+      if (existing >= 0) PERIODS.splice(existing, 1);
+      PERIODS.push({ key: "custom", label: "Custom", days: customDays, compare: null });
+      currentPeriod = "custom";
+      renderInsights(view, alive);
+    });
+  }
 
   // Back button
   view.querySelector("[data-nav='home']")?.addEventListener("click", () => {
