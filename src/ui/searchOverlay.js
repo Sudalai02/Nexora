@@ -312,12 +312,12 @@ export function openSearch() {
   st.selected = 0;
 
   backdropEl = document.createElement("div");
-  backdropEl.className = "modal-backdrop search-backdrop";
+  backdropEl.className = "search-backdrop";
   backdropEl.innerHTML = `
     <div class="search-modal" role="dialog" aria-modal="true" aria-label="Search">
       <div class="search-input-row">
         <span class="nav-icon" data-icon="search"></span>
-        <input type="text" id="search-input" placeholder="Search tasks, projects, goals, habits, notes, events…" autocomplete="off" />
+        <input type="text" id="search-overlay-input" placeholder="Search tasks, projects, goals, habits, notes, events…" autocomplete="off" />
         <button class="icon-btn" id="search-close" aria-label="Close search"><span class="nav-icon" data-icon="x"></span></button>
       </div>
       <div class="search-toolbar">
@@ -325,11 +325,14 @@ export function openSearch() {
           <button class="chip ${st.module === "all" ? "active" : ""}" data-mod="all">All</button>
           ${MODULE_DEFS.map((m) => `<button class="chip ${st.module === m.id ? "active" : ""}" data-mod="${m.id}">${m.label}</button>`).join("")}
         </div>
-        <select class="filter-select search-sort" id="search-sort">
-          <option value="relevance">Sort: Relevance</option>
-          <option value="updated">Sort: Recently updated</option>
-          <option value="az">Sort: A → Z</option>
-        </select>
+        <div class="search-sort">
+          <label for="search-sort">Sort</label>
+          <select id="search-sort">
+            <option value="relevance">Relevance</option>
+            <option value="updated">Recently updated</option>
+            <option value="az">A → Z</option>
+          </select>
+        </div>
       </div>
       <div class="search-count" id="search-info"></div>
       <div class="search-results" id="search-results"></div>
@@ -338,7 +341,7 @@ export function openSearch() {
   `;
   document.body.appendChild(backdropEl);
 
-  const input = backdropEl.querySelector("#search-input");
+  const input = backdropEl.querySelector("#search-overlay-input");
   requestAnimationFrame(() => {
     backdropEl.classList.add("open");
     input.focus();
