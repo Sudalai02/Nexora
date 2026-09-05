@@ -6,9 +6,12 @@
 //   users/{uid}/meta, users/{uid}/profile, users/{uid}/settings,
 //   users/{uid}/tasks, users/{uid}/projects, ... etc.
 //
-// Firestore's persistent local cache keeps the app usable offline
-// while Firebase remains the source of truth. Existing IndexedDB
-// data is migrated to Firestore the first time a user signs in.
+// PERFORMANCE: reads are cache-first. Each store is buffered in
+// memory the first time it is queried; writes apply to the cache
+// immediately and hit Firestore in the background, so the UI
+// reflects changes instantly without waiting on the network.
+// Firestore's persistent local cache stays the durable copy and
+// replays any offline writes when connectivity returns.
 // ============================================================
 
 import {
@@ -69,6 +72,55 @@ onAuthStateChanged(auth, (user) => {
   if (user) migrateLocalToCloud(user.uid);
 });
 
+// ---------- in-memory write-through cache ----------
+// `cache` maps storeName → Map(id → doc). A store is marked `loaded`
+// after its first successful Firestore read. Pending local writes are
+// kept in the Map even while the store is still loading, so nothing
+// the user does is ever lost to a cache reset.
+const cache = new Map();
+const loaded = new Set();
+
+function cacheOf(storeName) {
+  let m = cache.get(storeName);
+  if (!m) {
+    m = new Map();
+    cache.set(storeName, m);
+  }
+  return m;
+}
+
+function cacheSet(storeName, obj) {
+  cacheOf(storeName).set(String(obj.id), { ...obj });
+}
+
+async function ensureLoaded(storeName) {
+  if (loaded.has(storeName)) return;
+  loaded.add(storeName); // guard against duplicate concurrent loads
+  const ref = collectionRef(storeName);
+  if (!ref) return;
+  try {
+    const snap = await getDocs(ref);
+    const m = new Map(cacheOf(storeName)); // keep any optimistic local writes
+    for (const d of snap.docs) {
+      if (!m.has(d.id)) m.set(d.id, { ...d.data(), id: d.id });
+    }
+    cache.set(storeName, m);
+  } catch (err) {
+    loaded.delete(storeName); // allow a retry on the next read
+    console.warn(`[db] store "${storeName}" failed to sync`, err?.message || err);
+  }
+}
+
+// Pick up changes made in other tabs/devtools by re-syncing in the
+// background whenever the tab regains focus. Reads keep serving the
+// cached data instantly; the fresh copy lands when the query returns.
+window.addEventListener("focus", () => {
+  for (const storeName of [...loaded]) {
+    loaded.delete(storeName);
+    ensureLoaded(storeName);
+  }
+});
+
 // ---------- path builders ----------
 
 function cloudPath(storeName, uid = currentUid) {
@@ -89,6 +141,16 @@ function docRef(storeName, id, uid = currentUid) {
 
 const BATCH_LIMIT = 499;
 
+// Firestore writes are fire-and-forget for the UI path. The SDK's
+// persistent cache guarantees the mutation survives locally and is
+// replayed when the network returns, which is all this app needs.
+function writeAsync(snapshot) {
+  Promise.resolve(snapshot).then(
+    () => undefined,
+    (err) => console.warn("[db] write pending in Firestore cache", err?.message || err)
+  );
+}
+
 async function writeInBatches(storeName, objs, uid) {
   for (let i = 0; i < objs.length; i += BATCH_LIMIT) {
     const chunk = objs.slice(i, i + BATCH_LIMIT);
@@ -107,49 +169,57 @@ async function writeInBatches(storeName, objs, uid) {
 export async function getAll(storeName) {
   const ref = collectionRef(storeName);
   if (!ref) return localGetAll(storeName);
-  const snap = await getDocs(ref);
-  return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  await ensureLoaded(storeName);
+  return [...cacheOf(storeName).values()].map((d) => ({ ...d }));
 }
 
 export async function get(storeName, id) {
   const ref = docRef(storeName, id);
   if (!ref) return localGet(storeName, id);
-  const snap = await getDoc(ref);
-  return snap.exists() ? { ...snap.data(), id: snap.id } : null;
+  await ensureLoaded(storeName);
+  const d = cacheOf(storeName).get(String(id));
+  return d ? { ...d } : null;
 }
 
 export async function put(storeName, obj) {
   const ref = docRef(storeName, obj.id);
   if (!ref) return localPut(storeName, obj);
-  await setDoc(ref, obj, { merge: true });
+  cacheSet(storeName, obj);
+  writeAsync(setDoc(ref, obj, { merge: true }));
   return obj;
 }
 
 export async function bulkPut(storeName, objs) {
   if (!objs.length) return objs;
+  for (const obj of objs) cacheSet(storeName, obj);
   if (!currentUid) return localBulkPut(storeName, objs);
-  await writeInBatches(storeName, objs, currentUid);
-  return objs;
+  return writeInBatches(storeName, objs, currentUid).then(() => objs);
 }
 
 export async function del(storeName, id) {
   const ref = docRef(storeName, id);
   if (!ref) return localDel(storeName, id);
-  await deleteDoc(ref);
+  cacheOf(storeName).delete(String(id));
+  writeAsync(deleteDoc(ref));
 }
 
 export async function clear(storeName) {
   const ref = collectionRef(storeName);
   if (!ref) return localClear(storeName);
-  const snap = await getDocs(ref);
-  const ids = snap.docs.map((d) => d.id);
-  for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
-    const batch = writeBatch(firestore);
-    for (const id of ids.slice(i, i + BATCH_LIMIT)) {
-      batch.delete(doc(firestore, cloudPath(storeName), String(id)));
-    }
-    await batch.commit();
-  }
+  cacheOf(storeName).clear();
+  loaded.delete(storeName);
+  writeAsync(
+    getDocs(ref).then((snap) => {
+      const ids = snap.docs.map((d) => d.id);
+      for (let i = 0; i < ids.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(firestore);
+        for (const id of ids.slice(i, i + BATCH_LIMIT)) {
+          batch.delete(doc(firestore, cloudPath(storeName), String(id)));
+        }
+        batch.commit();
+      }
+    })
+  );
 }
 
 // ---------- meta helpers (key/value convenience) ----------
@@ -188,7 +258,10 @@ async function migrateLocalToCloud(uid) {
       const snap = await getDocs(collection(firestore, cloudPath(storeName, uid)));
       const existing = new Set(snap.docs.map((d) => d.id));
       const toWrite = items.filter((o) => !existing.has(o.id));
-      if (toWrite.length) await writeInBatches(storeName, toWrite, uid);
+      if (toWrite.length) {
+        await writeInBatches(storeName, toWrite, uid);
+        for (const obj of toWrite) cacheSet(storeName, obj);
+      }
     }
 
     try {

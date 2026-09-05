@@ -67,22 +67,25 @@ html.dark {
 
   .bn-item {
     position: relative;
-    gap: 2px;
+    gap: 3px;
+    padding: var(--sp-2) var(--sp-3);
+    min-height: 54px;
+    font-size: 11px;
   }
   .bn-item .nav-icon {
     position: relative;
-    width: 22px;
-    height: 22px;
+    width: 23px;
+    height: 23px;
     transition: transform 0.15s ease;
   }
   .bn-item::before {
     content: "";
     position: absolute;
-    top: 6px;
+    top: 7px;
     left: 50%;
     transform: translateX(-50%);
-    width: 36px;
-    height: 28px;
+    width: 40px;
+    height: 30px;
     border-radius: var(--r-full);
     background: var(--focus-soft);
     opacity: 0;
@@ -93,6 +96,9 @@ html.dark {
   .bn-item.active::before { opacity: 1; }
 
   .bn-fab {
+    width: 54px;
+    height: 54px;
+    margin-top: -28px;
     transition: transform 0.12s ease, background 0.12s ease;
   }
   .bn-fab:active { transform: scale(0.92); }

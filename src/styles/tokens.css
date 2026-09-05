@@ -87,8 +87,8 @@
 
   /* ---- Layout ---- */
   --sidebar-w: 248px;
-  --topbar-h: 60px;
-  --bottomnav-h: 64px;
+  --topbar-h: 64px;
+  --bottomnav-h: 76px;
   --content-max: 1180px;
 }
 

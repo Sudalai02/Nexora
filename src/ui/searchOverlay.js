@@ -337,7 +337,7 @@ export function openSearch() {
       </div>
       <div class="search-count" id="search-info"></div>
       <div class="search-results" id="search-results"></div>
-      <div class="search-footer">↑↓ navigate · ↵ open · esc close</div>
+     <div class="search-footer">↑↓ navigate · ↵ open · esc close</div> 
     </div>
   `;
   document.body.appendChild(backdropEl);

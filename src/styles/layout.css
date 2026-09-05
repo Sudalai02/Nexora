@@ -2,7 +2,7 @@
   display: flex;
   min-height: 100vh;
   min-height: 100dvh;
-  overflow-x: hidden;
+  overflow-x: clip;
   width: 100%;
 }
 
@@ -118,7 +118,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -134,7 +134,7 @@
   background: rgba(250,250,249,0.92);
   backdrop-filter: blur(8px);
   z-index: 20;
-  overflow-x: hidden;
+  overflow-x: clip;
   min-width: 0;
 }
 html.dark .topbar { background: rgba(21,20,19,0.92); }
@@ -174,7 +174,7 @@ html.dark .topbar { background: rgba(21,20,19,0.92); }
   max-width: var(--content-max);
   width: 100%;
   margin: 0 auto;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ===================== BOTTOM NAV (mobile) ===================== */

@@ -124,9 +124,9 @@ export async function renderCalendar(view, alive = () => true) {
         ).join("")}
       </div>`;
     }
-    // month — compact dots grid
+    // month — compact dots grid (Monday-first, same as week view)
     const first = `${iso.slice(0, 7)}-01`;
-    const lead = (weekdayIdx(first) + 6) % 7;
+    const lead = weekdayIdx(first);
     const dim = new Date(fromISO(first).getFullYear(), fromISO(first).getMonth() + 1, 0).getDate();
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push(null);
