@@ -174,10 +174,10 @@ export function confirm({ title, message, confirmLabel = "Confirm", cancelLabel 
 // (read inputs from it before the DOM is discarded — the resolve
 // happens in the same tick as the click, so it is still live).
 // ------------------------------------------------------------
-export function openPanel({ title, eyebrow = "", bodyHTML = "", actions = [], onOpen = null }) {
+export function openPanel({ title, eyebrow = "", bodyHTML = "", actions = [], onOpen = null, extraClass = "" }) {
   const backdrop = ensureBackdrop();
   backdrop.innerHTML = `
-    <div class="modal form-modal panel-modal" role="dialog" aria-modal="true" aria-label="${title}">
+    <div class="modal form-modal panel-modal ${extraClass}" role="dialog" aria-modal="true" aria-label="${title}">
       <div class="form-modal-head">
         <div>
           ${eyebrow ? `<div class="eyebrow">${eyebrow}</div>` : ""}

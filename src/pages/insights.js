@@ -861,6 +861,7 @@ export async function renderInsights(view, alive = () => true) {
       const result = await openPanel({
         title: "Custom period",
         eyebrow: "PRODUCTIVITY HEALTH",
+        extraClass: "modal-vcenter",
         bodyHTML: `
           <div class="period-custom-form">
             <div class="form-field">

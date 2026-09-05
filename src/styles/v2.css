@@ -824,6 +824,13 @@
 /* Period tabs (reuses filter-bar) */
 .insights-tabs { margin-bottom: var(--sp-5); }
 .period-custom-btn { font-style: italic; }
+.modal.modal-vcenter {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+.modal-backdrop:has(.modal-vcenter) {
+  padding: 0;
+}
 .period-custom-form {
   display: flex;
   flex-direction: column;
