@@ -149,7 +149,7 @@ function launchSearch(e) {
   globalSearch?.blur();
   openSearch();
 }
-globalSearch?.addEventListener("pointerdown", launchSearch);
+globalSearch?.addEventListener("click", launchSearch);
 globalSearch?.addEventListener("focus", launchSearch);
 globalSearch?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === "ArrowDown") launchSearch(e);

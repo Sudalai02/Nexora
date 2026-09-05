@@ -28,6 +28,7 @@ const st = {
   module: "all",
   sort: "relevance",
   selected: 0,
+  openedAt: 0,
 };
 
 let backdropEl = null;
@@ -306,6 +307,7 @@ async function refresh() {
 export function openSearch() {
   if (st.open) return;
   st.open = true;
+  st.openedAt = Date.now();
   st.query = "";
   st.module = "all";
   st.sort = "relevance";
@@ -326,7 +328,6 @@ export function openSearch() {
           ${MODULE_DEFS.map((m) => `<button class="chip ${st.module === m.id ? "active" : ""}" data-mod="${m.id}">${m.label}</button>`).join("")}
         </div>
         <div class="search-sort">
-          <label for="search-sort">Sort</label>
           <select id="search-sort">
             <option value="relevance">Relevance</option>
             <option value="updated">Recently updated</option>
@@ -359,7 +360,7 @@ export function openSearch() {
 
   backdropEl.querySelector("#search-close").addEventListener("click", closeSearch);
   backdropEl.addEventListener("click", (e) => {
-    if (e.target === backdropEl) closeSearch();
+    if (e.target === backdropEl && Date.now() - st.openedAt > 350) closeSearch();
   });
 
   backdropEl.querySelectorAll("[data-mod]").forEach((chip) =>

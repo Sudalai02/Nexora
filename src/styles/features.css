@@ -506,11 +506,8 @@
 }
 .search-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .search-chips .chip { padding: 4px 11px; font-size: 11.5px; }
-.search-sort { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.search-sort label {
-  font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--graphite-dim);
-}
+.search-sort { display: flex; align-items: center; gap: 6px; }
+.search-sort label { display: none; }
 .search-sort select {
   appearance: none; -webkit-appearance: none;
   border: 1px solid var(--hairline-strong); border-radius: var(--r-full);
