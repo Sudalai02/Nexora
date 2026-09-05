@@ -1,0 +1,144 @@
+/* ============================================================
+   NEXORA UI POLISH — final mobile-first refinement layer
+   Loaded after v2.css so it smooths and unifies every page.
+   Focus: legible mid-grays, calmer titles, bigger touch
+   targets, a refined bottom nav + topbar, and consistent
+   pressed states — all safe for dark mode.
+   ============================================================ */
+
+/* One tap anywhere, no gray flash on mobile */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* ============ TOKEN REFINEMENT (contrast + calm) ============ */
+:root {
+  --graphite:        #57544D;   /* secondary text — readable at 13px */
+  --graphite-dim:    #77736B;   /* meta text — readable at 11px    */
+  --hairline:        #E8E5E0;
+}
+html.dark {
+  --graphite:        #A6A29A;
+  --graphite-dim:    #8B877F;
+  --hairline:        #2D2B28;
+}
+
+/* ============ TYPOGRAPHY ============ */
+.page-header h1 { letter-spacing: -0.025em; }
+.page-header .sub { color: var(--graphite); }
+.section-head h2 { letter-spacing: -0.02em; }
+.form-field label { color: var(--graphite); }
+
+/* ============ BUTTONS / CONTROLS ============ */
+.btn { transition: all 0.12s ease; }
+.btn:active:not(:disabled) { filter: brightness(0.96); }
+.btn-primary:active:not(:disabled) { filter: brightness(0.9); }
+.seg-btn { min-height: 36px; }
+.seg-control { align-items: stretch; }
+
+/* ============ CARDS (softer, consistent radius) ============ */
+.card { border-radius: 16px; }
+.card-flush { border-radius: 16px; }
+
+/* ============ SHELL: TOPBAR (mobile) ============ */
+@media (max-width: 720px) {
+  .topbar { min-height: var(--topbar-h); }
+
+  .search-shell {
+    border-color: transparent;
+    background: var(--paper-2);
+    border-radius: var(--r-full);
+    padding: 9px 15px;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+  }
+  .search-shell:focus-within {
+    background: var(--paper-raised);
+    box-shadow:
+      0 0 0 2px var(--focus-soft),
+      0 1px 4px rgba(21, 20, 19, 0.06);
+  }
+  .search-shell input { font-size: 14.5px; }
+}
+
+/* ============ SHELL: BOTTOM NAV (mobile) ============ */
+@media (max-width: 900px) {
+  .bottom-nav {
+    height: calc(var(--bottomnav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bn-item {
+    position: relative;
+    gap: 2px;
+  }
+  .bn-item .nav-icon {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    transition: transform 0.15s ease;
+  }
+  .bn-item::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 28px;
+    border-radius: var(--r-full);
+    background: var(--focus-soft);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+  .bn-item.active { color: var(--focus); }
+  .bn-item.active::before { opacity: 1; }
+
+  .bn-fab {
+    transition: transform 0.12s ease, background 0.12s ease;
+  }
+  .bn-fab:active { transform: scale(0.92); }
+}
+
+/* ============ LIST ROWS — tactile pressed state ============ */
+@media (hover: none) {
+  .task-row:active,
+  .task-row-v2:active,
+  .note-row:active,
+  .note-row-v2:active,
+  .nextup-row:active,
+  .priority-row:active,
+  .proj-snap-row:active,
+  .session-row:active,
+  .goal-row:active,
+  .project-row:active,
+  .inbox-row:active { background: var(--paper-2); }
+}
+
+/* ============ SEARCH OVERLAY (mobile) ============ */
+@media (max-width: 720px) {
+  .search-backdrop { padding: var(--sp-2); }
+  .search-modal {
+    border-radius: 18px;
+    max-height: calc(100dvh - 16px);
+  }
+  .search-input-row { padding: var(--sp-3) var(--sp-4); }
+  .search-result { padding: var(--sp-3); }
+  .sr-title { font-size: 14px; }
+}
+
+/* ============ TOAST — stays above bottom nav ============ */
+@media (max-width: 720px) {
+  .toast-wrap {
+    bottom: calc(var(--bottomnav-h) + 14px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ============ PAGE HEADER (mobile rhythm) ============ */
+@media (max-width: 720px) {
+  .page-header { margin-bottom: var(--sp-6); }
+  .page-header h1 { font-size: 24px; }
+  .page-header .sub { font-size: 14px; }
+}
+
+/* ============ EMPTY STATE — friendlier ============ */
+.empty-state .nav-icon { opacity: 0.45; }
+.empty-state p { line-height: 1.55; }
