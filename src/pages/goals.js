@@ -129,34 +129,38 @@ export async function renderGoals(view, alive = () => true) {
             ? "focus"
             : "neutral";
     const prioClass = { Urgent: "p-urgent", High: "p-high", Medium: "p-medium", Low: "p-low" }[g.priority] || "p-low";
+    const targetText = g.targetDate ? fmtDate(g.targetDate) : "no date";
     return `
-      <div class="card goal-card">
-        <div class="goal-card-with-prio">
-          <span class="goal-prio-edge ${prioClass}" aria-hidden="true"></span>
-          <div style="flex:1; min-width:0;">
-            <div class="goal-card-top">
-              <div>
-                <div class="goal-title">${g.title}</div>
-                <div class="goal-desc-truncated">${g.description}</div>
-                <div class="goal-target"><span class="goal-priority-dot ${prioClass}"></span> ${icon("flag", "")} ${g.targetDate ? fmtDate(g.targetDate) : "no date"} · ${g.category} · <span class="prio-${g.priority.toLowerCase()}">${g.priority}</span></div>
-              </div>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <span class="badge badge-${badge}">${g.status}</span>
-                <button class="icon-btn" data-edit-goal="${g.id}" aria-label="Edit goal">${icon("dots")}</button>
-              </div>
-            </div>
-            <div class="progress-track-slim" style="margin-top:var(--sp-3);"><div class="progress-fill-slim" style="width:${pct}%"></div></div>
-            <div class="goal-plan-chain">
-              ${(g.milestones || [])
-                .map(
-                  (step, i) => `
-                <button class="chain-step ${step.done ? "done" : ""}" data-ms="${g.id}:${i}" style="cursor:pointer;">${step.done ? "✓ " : ""}${step.label}</button>
-                ${i < g.milestones.length - 1 ? `<span class="chain-arrow">→</span>` : ""}`
-                )
-                .join("")}
-            </div>
+      <div class="card goal-card" data-edit-goal="${g.id}" data-goal-card>
+        <div class="project-card-color ${prioClass}"></div>
+        <div class="project-card-top">
+          <div class="project-card-name-wrap">
+            <div class="goal-title">${g.title}</div>
+            ${g.description ? `<div class="goal-desc-truncated">${g.description}</div>` : ""}
+          </div>
+          <div class="project-card-top-right">
+            <span class="badge badge-${badge}">${g.status}</span>
+            <button class="icon-btn project-card-menu" data-goal-menu="${g.id}" aria-label="Goal actions" onclick="event.stopPropagation()">${icon("dots")}</button>
           </div>
         </div>
+        <div class="goal-progress-row">
+          <div class="progress-track-slim" style="flex:1;"><div class="progress-fill-slim" style="width:${pct}%"></div></div>
+          <span class="goal-pct num">${pct}%</span>
+        </div>
+        <div class="project-card-footer">
+          <span>${icon("flag")} ${targetText}</span>
+          <span>${g.category} · ${g.priority}</span>
+        </div>
+        ${g.milestones?.length ? `
+        <div class="goal-plan-chain" style="margin-top:var(--sp-3);">
+          ${g.milestones
+            .map(
+              (step, i) => `
+            <button class="chain-step ${step.done ? "done" : ""}" data-ms="${g.id}:${i}" style="cursor:pointer;" onclick="event.stopPropagation()">${step.done ? "✓ " : ""}${step.label}</button>
+            ${i < g.milestones.length - 1 ? `<span class="chain-arrow">→</span>` : ""}`
+            )
+            .join("")}
+        </div>` : ""}
       </div>`;
   }
 
@@ -239,7 +243,7 @@ export async function renderGoals(view, alive = () => true) {
 
       ${
         filteredG.length
-          ? pageGoals.map(goalCard).join("")
+          ? `<div class="goal-grid">${pageGoals.map(goalCard).join("")}</div>`
           : goals.length
             ? `<div class="empty-state"><h3>No matches</h3><p>No goals fit these filters.</p></div>`
             : `<div class="empty-state"><h3>No goals yet</h3><p>Define what you're working toward.</p></div>`
@@ -484,61 +488,66 @@ export async function renderGoals(view, alive = () => true) {
       renderHabits();
     });
 
-    view.querySelectorAll("[data-edit-goal]").forEach((btn) =>
-      btn.addEventListener("click", async () => {
-        const g = goals.find((x) => x.id === btn.dataset.editGoal);
-        if (!g) return;
-        const res = await openPanel({
-          title: g.title,
-          eyebrow: `🎯 ${g.category} · ${g.priority} · ${prog[g.id]?.pct ?? 0}%`,
-          actions: [
-            { id: "edit", label: "✏️ Edit details", class: "btn-secondary" },
-            { id: "milestone", label: "＋ Add milestone step", class: "btn-secondary" },
-            ...(g.status !== "Completed"
-              ? [{ id: "complete", label: "🏁 Mark as Completed", class: "btn-secondary" }]
-              : []),
-            { id: "hold", label: "⏸️ Put On Hold", class: "btn-ghost" },
-            { id: "delete", label: "🗑️ Delete goal", class: "btn-danger" },
-          ],
-        });
-        if (!res) return;
+    async function openGoalPanel(gid) {
+      const g = goals.find((x) => x.id === gid);
+      if (!g) return;
+      const res = await openPanel({
+        title: g.title,
+        eyebrow: `🎯 ${g.category} · ${g.priority} · ${prog[g.id]?.pct ?? 0}%`,
+        actions: [
+          { id: "edit", label: "✏️ Edit details", class: "btn-secondary" },
+          { id: "milestone", label: "＋ Add milestone step", class: "btn-secondary" },
+          ...(g.status !== "Completed"
+            ? [{ id: "complete", label: "🏁 Mark as Completed", class: "btn-secondary" }]
+            : []),
+          { id: "hold", label: "⏸️ Put On Hold", class: "btn-ghost" },
+          { id: "delete", label: "🗑️ Delete goal", class: "btn-danger" },
+        ],
+      });
+      if (!res) return;
 
-        if (res.action === "edit") {
-          const upd = await goalModal(g);
-          if (!upd) return;
-          Object.assign(g, await goalService.updateGoal(g.id, upd));
-          toast("Goal updated");
-        } else if (res.action === "milestone") {
-          const m = await openForm({
-            title: "Add milestone",
-            eyebrow: g.title,
-            fields: [{ name: "label", label: "Milestone", required: true, placeholder: "e.g. Ship beta" }],
-            submitLabel: "Add",
-          });
-          if (!m?.label?.trim()) return;
-          const ms = [...(g.milestones || []), { label: m.label.trim(), done: false }];
-          Object.assign(g, await goalService.updateGoal(g.id, { milestones: ms }));
-          toast("Milestone added");
-        } else if (res.action === "complete") {
-          Object.assign(g, await goalService.updateGoal(g.id, { status: "Completed" }));
-          toast("Goal completed 🎉");
-        } else if (res.action === "hold") {
-          Object.assign(g, await goalService.updateGoal(g.id, { status: "On Hold" }));
-          toast("Goal on hold");
-        } else if (res.action === "delete") {
-          const ok = await confirmModal({
-            title: "Delete goal?",
-            message: `“${g.title}” moves to the Recycle Bin for 15 days. Linked projects become standalone but nothing is lost.`,
-            confirmLabel: "Delete",
-            danger: true,
-          });
-          if (!ok) return;
-          await goalService.removeGoal(g.id);
-          goals.splice(goals.indexOf(g), 1);
-          toast("Moved to Recycle Bin");
-        }
-        draw();
-      })
+      if (res.action === "edit") {
+        const upd = await goalModal(g);
+        if (!upd) return;
+        Object.assign(g, await goalService.updateGoal(g.id, upd));
+        toast("Goal updated");
+      } else if (res.action === "milestone") {
+        const m = await openForm({
+          title: "Add milestone",
+          eyebrow: g.title,
+          fields: [{ name: "label", label: "Milestone", required: true, placeholder: "e.g. Ship beta" }],
+          submitLabel: "Add",
+        });
+        if (!m?.label?.trim()) return;
+        const ms = [...(g.milestones || []), { label: m.label.trim(), done: false }];
+        Object.assign(g, await goalService.updateGoal(g.id, { milestones: ms }));
+        toast("Milestone added");
+      } else if (res.action === "complete") {
+        Object.assign(g, await goalService.updateGoal(g.id, { status: "Completed" }));
+        toast("Goal completed 🎉");
+      } else if (res.action === "hold") {
+        Object.assign(g, await goalService.updateGoal(g.id, { status: "On Hold" }));
+        toast("Goal on hold");
+      } else if (res.action === "delete") {
+        const ok = await confirmModal({
+          title: "Delete goal?",
+          message: `“${g.title}” moves to the Recycle Bin for 15 days. Linked projects become standalone but nothing is lost.`,
+          confirmLabel: "Delete",
+          danger: true,
+        });
+        if (!ok) return;
+        await goalService.removeGoal(g.id);
+        goals.splice(goals.indexOf(g), 1);
+        toast("Moved to Recycle Bin");
+      }
+      draw();
+    }
+
+    view.querySelectorAll("[data-goal-card]").forEach((el) =>
+      el.addEventListener("click", () => openGoalPanel(el.dataset.editGoal))
+    );
+    view.querySelectorAll("[data-goal-menu]").forEach((btn) =>
+      btn.addEventListener("click", () => openGoalPanel(btn.dataset.goalMenu))
     );
 
     view.querySelectorAll("[data-ms]").forEach((el) =>
